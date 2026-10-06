@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash screen, matching the in-app splash exactly. -->
+    <style name="Theme.Pulse.Splash" parent="Theme.Pulse">
+        <item name="android:windowSplashScreenBackground">@color/pulse_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_pulse_logo</item>
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:statusBarColor">@color/pulse_bg</item>
+        <item name="android:navigationBarColor">@color/pulse_bg</item>
+    </style>
+</resources>

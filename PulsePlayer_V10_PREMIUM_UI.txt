@@ -1,0 +1,16 @@
+Pulse Player V10 Premium UI
+
+Visual changes:
+- Added a dedicated premium visual layer at app/src/main/assets/web/css/premium.css
+- Added polished home hero, glass navigation, elevated library rows, cards, mini-player and full-player details
+- Added subtle press/hover motion to tappable controls
+- Added playing halo animation to the mini-player artwork
+- Added a curated home hero with quick Browse/Open Player action
+
+Notification:
+- Added app-branded monochrome notification icon at app/src/main/res/drawable/ic_pulse_notification.xml
+- Kept Media3's native notification provider so Android System UI, lock-screen, Bluetooth and media controls remain intact
+- Modern Android owns media notification progress/animation; the app does not replace it with a fragile custom RemoteViews notification
+
+Toolchain:
+- No Gradle, AGP, Kotlin, Java, Media3, Room, or dependency versions changed.

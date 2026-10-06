@@ -1,0 +1,20 @@
+Pulse Player V14
+
+Fixes and changes
+- Fixed the remaining MainActivity file-picker code that could cause the Kotlin parser to report an error at companion object / line 619.
+- Removed the Choose files manually UI option and detached bridge command. Legacy source helper remains unreachable for compatibility.
+- Permission startup is sequential and immediate: notifications, music, then video access where required, followed by a full MediaStore scan.
+- Strengthened MediaStore audio discovery for OEM rows with blank/misreported MIME while keeping path, short-clip, game/BGM/SFX, and video-track filtering.
+- Library bridge no longer narrows already-classified tracks back out due to mediaType/MIME quirks.
+- Reduced startup shaking by repainting only the visible page and eliminating duplicate structural redraws.
+- Full player artwork now shows a deterministic cover immediately, then replaces it with native artwork/video thumbnail when available.
+- Native MP4 music-video thumbnail fallback now tries several video-frame timestamps after loadThumbnail fails.
+- Full player artwork size is slightly smaller and more balanced for phone screens.
+- Custom sleep timer is available from the full player and Settings, 1 to 720 minutes.
+- No Gradle, AGP, Kotlin, Java, Media3, Room, or dependency/toolchain upgrades.
+
+Validation
+- JavaScript syntax checked with node --check.
+- XML resources parsed successfully.
+- Kotlin source checked for parser errors with kotlinc; project compilation still depends on the Android/Gradle environment.
+- Gradle offline build cannot complete in this environment because the wrapper distribution is not cached and network access is unavailable.

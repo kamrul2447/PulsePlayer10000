@@ -1,0 +1,15 @@
+Pulse Player V9 TOTAL FIX
+
+Fixed the blank Home/Library UI caused by a JavaScript syntax error in data/library.js.
+
+Changes:
+- Fixed the malformed Windows-path normalization regex in library.js.
+- Music-video rows with video/* MIME are now allowed when native classification marks them as music.
+- Removed the UI-side mediaType=video rejection that hid accepted music videos.
+- Store album/artist indexes now include accepted music-video tracks while still excluding ordinary videos.
+- Verified every JavaScript file with Node syntax checking.
+- Bumped audio/video permission prompt version markers to v9 so this build can re-request permissions on updated installs when needed.
+
+Toolchain versions were not changed.
+
+Build note: this environment could not download the Gradle 8.14.5 distribution because external network access is unavailable. The source was syntax-checked; Android Studio should build it with the locally available Gradle distribution.

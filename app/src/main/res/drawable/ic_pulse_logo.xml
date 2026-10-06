@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full Pulse Player logo mark: gradient rounded square + waveform bars.
+     Used by the splash screen (drawable/splash_background.xml). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path android:pathData="M38,6 L82,6 A32,32 0 0 1 114,38 L114,82 A32,32 0 0 1 82,114 L38,114 A32,32 0 0 1 6,82 L6,38 A32,32 0 0 1 38,6 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="6"
+                android:startY="6"
+                android:endX="114"
+                android:endY="114">
+                <item android:offset="0" android:color="#FF8B5CF6" />
+                <item android:offset="0.55" android:color="#FF7C3AED" />
+                <item android:offset="1" android:color="#FF4C1D95" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M30,52h7v16h-7z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M43,44h7v32h-7z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M56,34h7v52h-7z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M69,44h7v32h-7z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M82,52h7v16h-7z" />
+</vector>

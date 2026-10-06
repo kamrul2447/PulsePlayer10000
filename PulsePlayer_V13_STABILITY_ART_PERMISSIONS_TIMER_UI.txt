@@ -1,0 +1,12 @@
+Pulse Player V13 - stability, permissions, artwork, timer and visual pass
+
+Changes
+- Fixed MainActivity.kt parser error at the companion object caused by a missing brace in the permission helper.
+- First launch now requests the required Android permissions sequentially without persistent prompted flags: notifications (Android 13+), music/audio, then video access for music-video classification.
+- Removed the Choose/Browse file picker UI from onboarding, Library and Review. Library scanning is now automatic.
+- Sleep timer now supports a custom value from 1 to 720 minutes in both Settings and the full player.
+- Full-player artwork now shows a deterministic cover immediately, then swaps to native MediaStore/embedded artwork when available, preventing a blank square while Android resolves thumbnails.
+- Reduced startup redraws: duplicate library snapshots are ignored, scan progress no longer rebuilds Home repeatedly, and entrance animations are disabled during boot.
+- Kept the native Media3 player/session/background playback architecture unchanged.
+- Added a stronger premium visual pass across Home, Search, Library, Settings and Full Player without changing navigation or playback flow.
+- No Gradle, AGP, Kotlin, Java, Media3, Room or other toolchain upgrades.

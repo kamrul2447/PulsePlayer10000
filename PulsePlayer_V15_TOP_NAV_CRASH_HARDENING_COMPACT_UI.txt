@@ -1,0 +1,13 @@
+Pulse Player V15
+================
+
+Changes:
+- Moved the four primary navigation buttons (Home/Search/Library/Settings) to the top.
+- Removed inactive ad placeholder elements that had no function.
+- Reduced top-bar, home-hero, mini-player and full-player vertical footprint.
+- Removed startup page self-transition that caused a visible WebView/Samsung shake.
+- Added a conservative Android bottom-inset floor for Samsung gesture navigation.
+- Contained CommandDispatcher coroutine failures so database/scanner/provider errors become UI errors rather than uncaught lifecycle crashes.
+- Added safer snapshot handling and detailed Media3 playback-error logging.
+- Disabled video-track rendering in the native Media3 player because Pulse is audio-first; AAC audio inside music-video MP4 remains playable.
+- No Gradle, AGP, Kotlin, Java, Media3, Room or dependency upgrades.

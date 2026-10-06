@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Main app theme. The actual colours live in CSS; this only paints the
+         system bars so the WebView blends with the OS. -->
+    <style name="Theme.Pulse" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/pulse_bg</item>
+        <item name="android:navigationBarColor">@color/pulse_bg</item>
+        <item name="android:windowBackground">@color/pulse_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">@color/pulse_brand_400</item>
+    </style>
+
+    <!-- Launcher theme: shows the Pulse mark while the process + WebView start.
+         MainActivity switches to Theme.Pulse in onCreate. -->
+    <style name="Theme.Pulse.Splash" parent="Theme.Pulse">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:statusBarColor">@color/pulse_bg</item>
+        <item name="android:navigationBarColor">@color/pulse_bg</item>
+    </style>
+
+</resources>

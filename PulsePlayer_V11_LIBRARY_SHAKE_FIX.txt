@@ -1,0 +1,9 @@
+Pulse Player V11 — Library shake/jitter fix
+
+Root cause:
+The native playback service publishes state snapshots at 2 Hz while music is playing. The UI was rebuilding every Library row on every snapshot. Each rebuild restarted the .stagger rise animation, making the entire Library appear to repeatedly shake.
+
+Fix:
+The Library now refreshes its rows only when the current track changes or playback changes between playing and paused. Position snapshots still update the progress/mini-player without rebuilding the Library DOM.
+
+No playback engine, Media3, scanner, navigation, toolchain, or dependencies were changed.

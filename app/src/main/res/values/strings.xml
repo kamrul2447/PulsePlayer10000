@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pulse Player</string>
+
+    <!-- Notification channel -->
+    <string name="channel_playback_name">Music playback</string>
+    <string name="channel_playback_description">Playback controls and the now-playing notification</string>
+
+    <!-- Permission rationale -->
+    <string name="permission_music_title">Music access</string>
+    <string name="permission_music_message">Pulse Player needs access to the audio files on this device to build your library. Nothing is uploaded anywhere.</string>
+    <string name="permission_denied_message">Music permission was denied, so the library cannot be scanned.</string>
+</resources>

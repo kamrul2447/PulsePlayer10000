@@ -1,0 +1,40 @@
+PULSE PLAYER — V17 CHANGE NOTES / DISTRIBUTION CHECKLIST
+
+This project is based on v16, bumps the app version to 1.0.3 (versionCode 4), and keeps the existing Android/Media3/Room/toolchain versions unchanged.
+
+FIXES / FEATURES
+- Library scan no longer treats a failed MediaStore audio query as an empty library.
+- Normal startup/background refresh will preserve an existing library when MediaStore temporarily returns zero playable tracks. Startup now uses the protected non-destructive refresh path; explicit Rescan uses full reconciliation.
+- Previously indexed music-video rows are kept when READ_MEDIA_VIDEO is not granted.
+- Delete from device was added to the local song three-dot menu. Android 11+ uses MediaStore's official confirmation UI when direct deletion is not allowed.
+- Default Pulse theme is dark.
+- Library and Settings icons were refreshed.
+- Player artwork, mini-player and navigation now have additional interactive motion; reduced-motion is respected.
+- Search bar now has a three-dot API menu.
+- User APIs can be added with HTTPS JSON GET URLs using {query}, {q}, or the default appended q parameter.
+- Enabled APIs are searched together with the built-in provider, and direct HTTPS audio URLs can be played from the returned rows.
+- Online search results are grouped by provider/API name.
+- Release R8/minification is disabled for stability-first distribution.
+- Playback service explicitly uses stopWithTask=false and retains the existing Media3 foreground playback architecture.
+
+USER API FORMAT
+Example:
+https://example.com/api/search?q={query}
+
+or:
+https://example.com/api/search?query={query}
+
+A response can be a JSON array or an object containing data/results/items/tracks/songs. Rows may expose common fields such as title/name, artist/author, album, artwork/thumbnail, and streamUrl/audioUrl/downloadUrl/url. The playable audio URL must be HTTPS.
+
+IMPORTANT
+Generic APIs cannot be guaranteed to work just because a URL returns JSON. An API may require headers, authentication, POST requests, signed URLs, DRM, or return a webpage instead of a direct audio stream. This build intentionally supports safe HTTPS GET APIs with direct HTTPS media URLs.
+
+APK DISTRIBUTION
+1. Build a release APK, not an app bundle, when you want a single file to send to another Android phone.
+2. Release builds now fail fast unless keystore/pulse.properties points to a signing key. Copy keystore/pulse.properties.example, fill in your existing release keystore details, then build assembleRelease.
+3. Keep the same signing key for future updates. If a phone already has the app signed with a different key, Android will refuse the update until the old app is uninstalled.
+4. The v16 ZIP did not contain the private keystore/password, so this project package intentionally does not embed a private signing key.
+5. Before distributing, install the final signed release APK on a second Android device and verify first launch, READ_MEDIA_AUDIO permission, library scan, Bluetooth playback with screen off, delete confirmation, and one custom API search.
+
+BACKGROUND PLAYBACK NOTE
+There is no code evidence here that the service is intentionally stopping after screen-off. The service already uses MediaSessionService, foreground media playback, a wake mode, and an onTaskRemoved implementation that does not stop playback. Samsung and other Android OEM power policies can still terminate an app/service. Users affected by this should set Pulse Player's battery usage to Unrestricted/Allow background activity in system settings.

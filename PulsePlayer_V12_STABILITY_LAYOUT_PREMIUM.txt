@@ -1,0 +1,42 @@
+Pulse Player V12 — Stability + Safe-Area + Library + Premium UI
+
+Base: V11 Library Shake Fix
+
+FIXED / HARDENED
+- Hardened PulsePlaybackService coroutine failures with a service-level CoroutineExceptionHandler.
+- Wrapped playback-state persistence, play-count updates, state/queue publishing, restore, favorites, and failed-item skipping so non-fatal exceptions do not crash the app process.
+- Removed a useless playback-state coroutine launch during service destruction; state is already persisted on meaningful transitions.
+- Hardened WebView renderer failure handling so a renderer crash recreates the Activity instead of taking down the Pulse process.
+- Kept Media3/ExoPlayer, MediaSession, background playback, notification, Bluetooth/lock-screen controls, queue, shuffle/repeat, favorites and sleep timer architecture unchanged.
+
+LIBRARY FIX
+- Fixed the native-to-WebView library publishing filter so every scanner-classified music track is sent to the UI, including genuine music-video MP4 files stored by MediaStore as video/*.
+- Hidden tracks remain excluded.
+- Existing audio-first classifier and SnapTube music-video classification remain intact.
+- Existing manual Browse → Review workflow remains intact.
+
+SAFE AREA / BUTTONS
+- Bottom navigation now receives the larger of system-bar and system-gesture insets.
+- This prevents Home/Search/Library/Settings and other bottom controls from being placed under Samsung's navigation buttons or gesture area.
+- Preserved edge-to-edge design while moving critical touch targets into the safe area.
+- Improved small-screen spacing for compact displays.
+
+PREMIUM UI / MOTION
+- Added a floating active-state treatment to the main navigation.
+- Refined library list hierarchy, current-track glow, artwork depth and row interaction.
+- Added a premium empty-library orbital treatment.
+- Kept motion restrained and disabled/reduced when reduced-motion is enabled.
+- Preserved the existing premium hero, mini-player halo, full-player polish, ripples and equalizer animations.
+
+TOOLCHAIN
+- No Gradle upgrade.
+- No Android Gradle Plugin upgrade.
+- No Kotlin/Java upgrade.
+- No Media3 upgrade.
+- No Room upgrade.
+- No new playback dependency.
+
+VALIDATION
+- All JavaScript files pass node --check.
+- Android XML resources parse successfully.
+- Gradle assembleDebug could not be executed in this environment because the configured Gradle 8.14.5 distribution was not locally cached and network access to services.gradle.org was unavailable.

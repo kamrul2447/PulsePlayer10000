@@ -1,0 +1,42 @@
+Pulse Player V16
+================
+
+Fixes (from the screenshots + report on V15):
+
+1. Nav buttons hidden under the phone's system buttons / mini player floating too high
+   - V15 declared the nav "top" but used CSS `order:1`, which pushed it to the BOTTOM
+     with its safe-area padding removed. That is why it sat under the 3-button bar.
+   - Insets are now handled natively: MainActivity wraps the WebView in a FrameLayout
+     padded by systemBars + displayCutout + IME. The page viewport IS the safe area,
+     so CSS --safe-t/--safe-b are 0 and nothing can slide under system UI.
+   - Layout is now a normal flex stack: [pages] [mini player] [nav bar]. The mini
+     player sits directly on top of the nav bar (no more fixed/floating offsets).
+
+2. Full-screen player showed no thumbnail
+   - playerui.js added `.is-swapping` to the art box and then cancelled the timer that
+     removed it, so the <img> stayed at the end of the art-out animation (opacity 0)
+     forever. The class is no longer used there.
+
+3. Library > Songs list
+   - Rows are rendered in chunks of 60 as you scroll (3000 songs: 2.6 s -> 0.13 s to
+     first paint in a headless test), scroll position is kept on refresh.
+   - Rendering is wrapped in try/catch with a retry/empty state instead of leaving a
+     blank page, and the Library repaints if it is ever entered while empty.
+   - U.icon() now accepts both 'play' and 'i-play' (sort / rescan / shuffle icons in
+     Library were pointing at a non-existent '#i-i-...' symbol).
+
+4. Music sometimes stops by itself
+   - onPlayerError skipped to the next item but never called prepare()/play(); after an
+     error ExoPlayer is IDLE, so one unreadable file silently stopped playback.
+     Now: skip + prepare + play, with a limit of 5 consecutive failures.
+   - Startup queue-restore ran asynchronously and could replace a queue the user had
+     already started (and set playWhenReady=false). It now does nothing if a queue exists
+     (service and CMD_RESTORE_QUEUE).
+   - WAKE_MODE_LOCAL -> WAKE_MODE_NETWORK so streamed (Audius) tracks keep Wi-Fi alive
+     with the screen off.
+   - playTracks picks the start index by uid (not list position) and large queues are
+     queried in chunks of 900 (SQLite variable limit on older Android).
+
+No Gradle / AGP / Kotlin / Media3 / Room version changes.
+Note: Kotlin changes could not be compiled in the authoring environment (no Android SDK);
+the web layer was exercised headlessly with mock tracks.

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brand palette shared by the app shell (splash, status bar) and the UI. -->
+<resources>
+    <color name="pulse_bg">#FF0A0A0E</color>
+    <color name="pulse_surface">#FF14141C</color>
+    <color name="pulse_brand_300">#FFA78BFA</color>
+    <color name="pulse_brand_400">#FF8B5CF6</color>
+    <color name="pulse_brand_500">#FF7C3AED</color>
+    <color name="pulse_brand_600">#FF6D28D9</color>
+    <color name="pulse_brand_700">#FF4C1D95</color>
+    <color name="pulse_white">#FFFFFFFF</color>
+    <color name="pulse_light_bg">#FFF4F4F9</color>
+    <color name="pulse_light_surface">#FFFFFFFF</color>
+</resources>
