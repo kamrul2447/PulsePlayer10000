@@ -1,12 +1,15 @@
 package com.pulse.player.search
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URLEncoder
-import java.net.URL
 import java.util.Locale
 
 /**
@@ -56,7 +59,7 @@ class UserApiRepository {
                 enabled = item.optBoolean("enabled", true)
             )
         }
-        endpoints = out.distinctBy { it.id }
+        endpoints = out.distinctBy { it.id }.take(MAX_ENDPOINTS)
     }
 
     fun list(): List<UserApiEndpoint> = endpoints.toList()
@@ -65,21 +68,38 @@ class UserApiRepository {
         withContext(Dispatchers.IO) {
             val q = query.trim()
             if (q.isBlank()) return@withContext emptyList()
-
-            val output = ArrayList<TrackSearchResult>()
-            endpoints.filter { it.enabled }.forEach { api ->
-                runCatching {
-                    output += searchOne(api, q, limitPerApi)
-                }
+            coroutineScope {
+                endpoints.filter { it.enabled }.map { api ->
+                    async {
+                        try {
+                            withTimeoutOrNull(9_000L) { searchOne(api, q, limitPerApi) }.orEmpty()
+                        } catch (c: CancellationException) {
+                            throw c
+                        } catch (t: Throwable) {
+                            emptyList<TrackSearchResult>()
+                        }
+                    }
+                }.awaitAll().flatten()
             }
-            output
         }
+
+    /** Health check for one endpoint: HTTP 2xx and a JSON body. */
+    suspend fun check(api: UserApiEndpoint): ProviderCheck = withContext(Dispatchers.IO) {
+        val r = ApiHttp.get(api.id, buildQueryUrl(api.url, "test"), readMs = 8_000, accept = "application/json, text/plain;q=0.8")
+        when {
+            r.code !in 200..299 -> ProviderCheck(false, "HTTP ${r.code}", r.ms)
+            r.body.isBlank() -> ProviderCheck(false, "Empty response", r.ms)
+            !r.body.trimStart().let { it.startsWith("{") || it.startsWith("[") } ->
+                ProviderCheck(false, "Not JSON (this looks like a web page)", r.ms)
+            else -> ProviderCheck(true, "Works (${r.ms} ms)", r.ms)
+        }
+    }
 
     private fun searchOne(api: UserApiEndpoint, query: String, limit: Int): List<TrackSearchResult> {
         val requestUrl = buildQueryUrl(api.url, query)
-        if (!requestUrl.startsWith("https://", true) && !requestUrl.startsWith("http://", true)) return emptyList()
+        if (!requestUrl.startsWith("https://", true)) return emptyList()
 
-        val body = httpGet(requestUrl)
+        val body = httpGet(api, requestUrl)
         if (body.isBlank()) return emptyList()
 
         val root: Any = when {
@@ -107,24 +127,9 @@ class UserApiRepository {
         }
     }
 
-    private fun httpGet(urlString: String): String {
-        val conn = (URL(urlString).openConnection() as? HttpURLConnection) ?: return ""
-        return try {
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 5_000
-            conn.readTimeout = 8_000
-            conn.instanceFollowRedirects = true
-            conn.useCaches = true
-            conn.setRequestProperty("Accept", "application/json, text/plain;q=0.8")
-            conn.setRequestProperty("User-Agent", "PulsePlayer/1.0")
-            val code = conn.responseCode
-            val proto = conn.url.protocol.lowercase()
-            if (proto != "https" && proto != "http") return ""
-            val input = if (code in 200..299) conn.inputStream else conn.errorStream
-            if (input == null) "" else input.bufferedReader(Charsets.UTF_8).use { it.readText().take(MAX_RESPONSE_CHARS) }
-        } finally {
-            conn.disconnect()
-        }
+    private fun httpGet(api: UserApiEndpoint, urlString: String): String {
+        val r = ApiHttp.get(api.id, urlString, readMs = 8_000, accept = "application/json, text/plain;q=0.8")
+        return if (r.code in 200..299) r.body else ""
     }
 
     private fun extractRows(root: Any): List<Any> {
@@ -287,6 +292,6 @@ class UserApiRepository {
     }
 
     companion object {
-        private const val MAX_RESPONSE_CHARS = 2_000_000
+        private const val MAX_ENDPOINTS = 12
     }
 }
