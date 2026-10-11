@@ -11,6 +11,7 @@ import android.net.Network
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -29,6 +30,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.core.splashscreen.SplashScreen
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.splashscreen.SplashScreenViewProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -146,8 +150,18 @@ class MainActivity : ComponentActivity() {
     private var lastBottomDp = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Swap the splash theme for the real one before the first frame.
-        setTheme(R.style.Theme_Pulse)
+        val splash = installSplashScreen()
+        val splashStart = SystemClock.uptimeMillis()
+        splash.setKeepOnScreenCondition {
+            !pageReady && SystemClock.uptimeMillis() - splashStart < 1_500L
+        }
+        splash.setOnExitAnimationListener { provider: SplashScreenViewProvider ->
+            provider.view.animate()
+                .alpha(0f)
+                .setDuration(200L)
+                .withEndAction { provider.remove() }
+                .start()
+        }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
@@ -274,11 +288,6 @@ class MainActivity : ComponentActivity() {
 
         val artwork = ServiceLocator.artwork(this)
         webView.webViewClient = PulseWebViewClient(this, artwork)
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                if (newProgress >= 60) markPageReady()
-            }
-        }
     }
 
     private fun setupWindowInsets() {

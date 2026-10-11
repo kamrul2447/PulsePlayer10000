@@ -12,12 +12,13 @@
         <item name="android:colorAccent">@color/pulse_brand_400</item>
     </style>
 
-    <!-- Launcher theme: shows the Pulse mark while the process + WebView start.
-         MainActivity switches to Theme.Pulse in onCreate. -->
-    <style name="Theme.Pulse.Splash" parent="Theme.Pulse">
-        <item name="android:windowBackground">@drawable/splash_background</item>
-        <item name="android:statusBarColor">@color/pulse_bg</item>
-        <item name="android:navigationBarColor">@color/pulse_bg</item>
+    <!-- Launcher theme (AndroidX SplashScreen): the system splash shows the Pulse mark on the
+         brand background, MainActivity holds it until the web UI has painted, fades it out in
+         200 ms, and the library then swaps in Theme.Pulse. Works the same on Android 7-15. -->
+    <style name="Theme.Pulse.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/pulse_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_pulse_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Pulse</item>
     </style>
 
 </resources>
