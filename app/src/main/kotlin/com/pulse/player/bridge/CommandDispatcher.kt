@@ -439,7 +439,7 @@ class CommandDispatcher(
         }
     }
 
-    /** Online catalogue result — built with placeholder URI for lazy resolution by Media3. */
+    /** Online catalogue result. YouTube = placeholder URI resolved lazily by Media3; others resolved here. */
     private fun playRemote(payload: JSONObject) {
         val json = payload.optJSONObject("item") ?: return
         val rawStream = json.optStringOrNull("streamUrl").orEmpty()
@@ -450,41 +450,50 @@ class CommandDispatcher(
         val artist = json.optString("artist", "Unknown artist")
         val album = json.optString("album", "")
 
-        val uriString = if (provider.equals("youtube", ignoreCase = true)) {
-            "pulse-yt://$id"
-        } else {
-            rawStream
+        launchSafe {
+            val uriString: String
+            if (provider.equals("youtube", ignoreCase = true)) {
+                uriString = "pulse-yt://$id"
+            } else {
+                EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Connecting audio stream…")
+                val resolved = withContext(Dispatchers.IO) { search.streamUrl(provider, id) ?: rawStream }
+                if (resolved.isBlank()) {
+                    EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This result cannot be played")
+                    return@launchSafe
+                }
+                if (!resolved.startsWith("https://", ignoreCase = true) &&
+                    !resolved.startsWith("http://", ignoreCase = true)) {
+                    EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Invalid audio stream URL")
+                    return@launchSafe
+                }
+                uriString = resolved
+            }
+
+            val controller = controllerProvider() ?: return@launchSafe
+            val item = MediaItem.Builder()
+                .setMediaId("remote:$provider:$id")
+                .setUri(Uri.parse(uriString))
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(title)
+                        .setArtist(artist)
+                        .setAlbumTitle(album)
+                        .setArtworkUri(if (art.isNullOrBlank()) null else Uri.parse(art))
+                        .setIsPlayable(true)
+                        .setExtras(Bundle().apply {
+                            putString("pulse.source", "online")
+                            putString("pulse.provider", provider)
+                            putString("pulse.trackId", id)
+                            putString("pulse.artworkUrl", art)
+                        })
+                        .build()
+                )
+                .build()
+
+            controller.setMediaItem(item)
+            controller.prepare()
+            controller.play()
         }
-
-        if (uriString.isBlank()) {
-            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This result cannot be played")
-            return
-        }
-
-        val controller = controllerProvider() ?: return
-        val item = MediaItem.Builder()
-            .setMediaId("remote:$provider:$id")
-            .setUri(Uri.parse(uriString))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist(artist)
-                    .setAlbumTitle(album)
-                    .setArtworkUri(if (art.isNullOrBlank()) null else Uri.parse(art))
-                    .setIsPlayable(true)
-                    .setExtras(Bundle().apply {
-                        putString("pulse.source", "online")
-                        putString("pulse.provider", provider)
-                        putString("pulse.trackId", id)
-                        putString("pulse.artworkUrl", art)
-                    })
-                    .build()
-            )
-            .build()
-
-        controller.setMediaItem(item)
-        controller.prepare()
-        controller.play()
     }
 
     private fun playArchived(payload: JSONObject) {
