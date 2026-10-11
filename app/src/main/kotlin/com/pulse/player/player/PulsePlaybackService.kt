@@ -9,6 +9,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -80,6 +81,7 @@ class PulsePlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var positionJob: kotlinx.coroutines.Job? = null
     private var consecutiveErrors = 0
+    private var ytRetried = false
 
     /* ═══════════════════════════ lifecycle ═══════════════════════════ */
 
@@ -89,7 +91,7 @@ class PulsePlaybackService : MediaSessionService() {
         settings = ServiceLocator.settings(this)
 
         player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(YouTubeResolvingDataSourceFactory()))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(YouTubeResolvingDataSourceFactory(this)))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -255,6 +257,7 @@ class PulsePlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            ytRetried = false
             val uid = mediaItem?.mediaId
             if (uid != null && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
                 serviceScope.launch {
@@ -268,7 +271,10 @@ class PulsePlaybackService : MediaSessionService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) consecutiveErrors = 0
+            if (isPlaying) {
+                consecutiveErrors = 0
+                ytRetried = false
+            }
             runCatching { savePlaybackState() }
             runCatching { publishState() }
             if (isPlaying) startPositionBroadcast()
@@ -298,13 +304,24 @@ class PulsePlaybackService : MediaSessionService() {
         override fun onPlayerError(error: PlaybackException) {
             android.util.Log.e(
                 "PulsePlaybackService",
-                "Media3 playback error: code=${error.errorCodeName}, message=${error.message}",
+                "Media3 playback error: code=${error.errorCodeName}",
                 error
             )
+            val extras = player.currentMediaItem?.mediaMetadata?.extras
+            val httpErr = error.cause as? HttpDataSource.InvalidResponseCodeException
+            if (extras?.getString("pulse.provider") == "youtube" &&
+                httpErr != null && httpErr.responseCode in listOf(403, 410) && !ytRetried) {
+                ytRetried = true
+                extras.getString("pulse.trackId")?.let { YouTubeUrlResolver.invalidate(it) }
+                player.seekTo(player.currentMediaItemIndex, player.currentPosition)
+                player.prepare()
+                return
+            }
+
             EventBus.emit(
                 BridgeProtocol.EVENT_ERROR,
                 "code" to "playback",
-                "message" to (error.message ?: "This file could not be played")
+                "message" to (error.cause?.message ?: error.message ?: "This file could not be played")
             )
             // After an error ExoPlayer is IDLE. Skipping to the next item is NOT
             // enough: it must be prepared again, otherwise playback silently
