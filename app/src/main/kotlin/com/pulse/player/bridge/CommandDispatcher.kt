@@ -67,6 +67,12 @@ class CommandDispatcher(
 
     private var scanJob: Job? = null
     private var searchJob: Job? = null
+    private var apiScanJob: Job? = null
+
+    private val API_SETTING_KEYS = setOf(
+        "onlineSearchEnabled", "apiEndpoints", "youtubeApiKey", "audiusApiKey",
+        "apiAudiusEnabled", "apiYoutubeEnabled"
+    )
 
     /* Commands originate in a WebView, so an exception inside a lifecycle
        coroutine must become an error event, not an uncaught exception on the
@@ -137,6 +143,8 @@ class CommandDispatcher(
 
                 BridgeProtocol.CMD_SEARCH_ONLINE -> searchOnline(payload.optString("query"))
                 BridgeProtocol.CMD_CANCEL_SEARCH -> searchJob?.cancel()
+                BridgeProtocol.CMD_LIST_APIS -> publishApis(scanning = false)
+                BridgeProtocol.CMD_SCAN_APIS -> scanApis(payload.optStringOrNull("id"))
 
                 BridgeProtocol.CMD_CLEAR_ART_CACHE -> launchSafe { artwork.clear() }
                 BridgeProtocol.CMD_KEEP_AWAKE -> activity.keepScreenAwake(payload.optBoolean("enabled", false))
@@ -160,17 +168,13 @@ class CommandDispatcher(
     private fun onReady(requestId: String?) {
         launchSafe {
             val settingsMap = settings.current()
-            search.setEnabled(settingsMap["onlineSearchEnabled"] as? Boolean == true)
-            search.setUserApis(settingsMap["apiEndpoints"] as? String)
-            search.setYouTubeApiKey(settingsMap["youtubeApiKey"] as? String)
+            applySearchSettings(settingsMap)
             EventBus.emit(
                 BridgeProtocol.EVENT_READY,
                 "appVersion" to BuildConfig.PULSE_VERSION,
                 "appId" to BuildConfig.APPLICATION_ID,
                 "protocol" to BridgeProtocol.VERSION,
-                "settings" to JSONObject().apply {
-                    settingsMap.forEach { (key, value) -> put(key, value ?: JSONObject.NULL) }
-                },
+                "settings" to settingsJson(settingsMap),
                 "online" to context.isNetworkAvailable(),
                 requestId = requestId
             )
@@ -435,28 +439,32 @@ class CommandDispatcher(
         }
     }
 
-    /** Online catalogue result — built as a standalone MediaItem. */
+    /** Online catalogue result — built with placeholder URI for lazy resolution by Media3. */
     private fun playRemote(payload: JSONObject) {
-        val json = payload.optJSONObject("item")
-        val stream = json?.optStringOrNull("streamUrl")
-        if (json == null || stream.isNullOrBlank()) {
-            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This result cannot be played")
-            return
-        }
-        val id = json.optString("id", stream).trim()
+        val json = payload.optJSONObject("item") ?: return
+        val rawStream = json.optStringOrNull("streamUrl").orEmpty()
+        val id = json.optString("id", rawStream).trim()
         val provider = json.optString("provider", "audius").ifBlank { "audius" }
-        if (provider.equals("youtube", ignoreCase = true) || stream.contains("youtube.com") || stream.contains("youtu.be")) {
-            activity.openExternalUrl(stream)
-            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Opening YouTube")
-            return
-        }
         val art = json.optStringOrNull("artworkUrl")
         val title = json.optString("title", "Unknown title")
         val artist = json.optString("artist", "Unknown artist")
         val album = json.optString("album", "")
+
+        val uriString = if (provider.equals("youtube", ignoreCase = true)) {
+            "pulse-yt://$id"
+        } else {
+            rawStream
+        }
+
+        if (uriString.isBlank()) {
+            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This result cannot be played")
+            return
+        }
+
+        val controller = controllerProvider() ?: return
         val item = MediaItem.Builder()
             .setMediaId("remote:$provider:$id")
-            .setUri(Uri.parse(stream))
+            .setUri(Uri.parse(uriString))
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(title)
@@ -474,11 +482,9 @@ class CommandDispatcher(
             )
             .build()
 
-        withPlayer { controller ->
-            controller.setMediaItem(item)
-            controller.prepare()
-            controller.play()
-        }
+        controller.setMediaItem(item)
+        controller.prepare()
+        controller.play()
     }
 
     private fun playArchived(payload: JSONObject) {
@@ -716,13 +722,59 @@ class CommandDispatcher(
                 "onlineSearchEnabled" -> search.setEnabled(value == true)
                 "apiEndpoints" -> search.setUserApis(value as? String)
                 "youtubeApiKey" -> search.setYouTubeApiKey(value as? String)
+                "audiusApiKey" -> search.setAudiusApiKey(value as? String)
+                "apiAudiusEnabled" -> search.setProviderEnabled("audius", value == true)
+                "apiYoutubeEnabled" -> search.setProviderEnabled("youtube", value == true)
                 "hideShortClips", "localSearchEnabled" -> Unit
             }
             val settingsMap = settings.current()
-            EventBus.emit(
-                BridgeProtocol.EVENT_SETTINGS,
-                JSONObject().apply { settingsMap.forEach { (k, v) -> put(k, v ?: JSONObject.NULL) } }
-            )
+            EventBus.emit(BridgeProtocol.EVENT_SETTINGS, settingsJson(settingsMap))
+            if (key in API_SETTING_KEYS) publishApis(scanning = false)
+        }
+    }
+
+    /* ═══════════════════════════ API manager ═══════════════════════════ */
+
+    private fun applySearchSettings(map: Map<String, Any?>) {
+        search.setEnabled(map["onlineSearchEnabled"] as? Boolean == true)
+        search.setUserApis(map["apiEndpoints"] as? String)
+        search.setYouTubeApiKey(map["youtubeApiKey"] as? String)
+        search.setAudiusApiKey(map["audiusApiKey"] as? String)
+        search.setProviderEnabled("audius", map["apiAudiusEnabled"] as? Boolean != false)
+        search.setProviderEnabled("youtube", map["apiYoutubeEnabled"] as? Boolean != false)
+    }
+
+    /** Settings sent to the page. API keys stay native; the page only learns whether one is set. */
+    private fun settingsJson(map: Map<String, Any?>): JSONObject = JSONObject().apply {
+        map.forEach { (k, v) ->
+            if (k == "youtubeApiKey" || k == "audiusApiKey") {
+                put(k + "Set", !(v as? String).isNullOrBlank())
+            } else {
+                put(k, v ?: JSONObject.NULL)
+            }
+        }
+    }
+
+    private fun publishApis(scanning: Boolean) {
+        EventBus.emit(
+            BridgeProtocol.EVENT_APIS,
+            "apis" to search.describeApis(),
+            "activity" to search.activityJson(),
+            "scanning" to scanning,
+            "at" to System.currentTimeMillis()
+        )
+    }
+
+    /** Health-checks every API (or one) without ever blocking the UI. */
+    private fun scanApis(onlyId: String?) {
+        apiScanJob?.cancel()
+        publishApis(scanning = true)
+        apiScanJob = launchSafe {
+            try {
+                search.scan(onlyId)
+            } finally {
+                publishApis(scanning = false)
+            }
         }
     }
 

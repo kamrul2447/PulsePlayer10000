@@ -35,6 +35,7 @@ object BridgeProtocol {
     const val EVENT_SEARCH_RESULTS = "searchResults"
     const val EVENT_SEARCH_ERROR = "searchError"
     const val EVENT_ADS = "ads"
+    const val EVENT_APIS = "apis"
     const val EVENT_TOAST = "toast"
     const val EVENT_ERROR = "error"
     const val EVENT_REPLY = "reply"
@@ -79,6 +80,8 @@ object BridgeProtocol {
 
     const val CMD_SEARCH_ONLINE = "searchOnline"
     const val CMD_CANCEL_SEARCH = "cancelSearch"
+    const val CMD_LIST_APIS = "listApis"
+    const val CMD_SCAN_APIS = "scanApis"
 
     const val CMD_CLEAR_ART_CACHE = "clearArtCache"
     const val CMD_KEEP_AWAKE = "keepAwake"

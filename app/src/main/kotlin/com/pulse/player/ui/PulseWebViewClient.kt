@@ -84,7 +84,9 @@ class PulseWebViewClient(
         val host = uri.host?.lowercase() ?: return false
         // Online artwork only. Media3 receives Audius streams natively and never
         // routes them through the WebView. Navigation remains blocked separately.
-        return host == "audius.co" || host.endsWith(".audius.co")
+        return host == "audius.co" || host.endsWith(".audius.co") ||
+            // YouTube search thumbnails (image subresources only; navigation stays blocked).
+            host == "i.ytimg.com" || host == "img.youtube.com"
     }
 
     /* ───────────────────────────── routing ───────────────────────────── */
@@ -94,7 +96,10 @@ class PulseWebViewClient(
 
         // ── artwork ──
         if (path.startsWith("art/")) {
-            val key = path.removePrefix("art/").let { java.net.URLDecoder.decode(it, "UTF-8") }
+            // A malformed %-escape used to throw here, on a WebView thread, and kill the app.
+            val key = runCatching {
+                path.removePrefix("art/").let { java.net.URLDecoder.decode(it, "UTF-8") }
+            }.getOrNull() ?: return notFound()
             val size = ArtworkRepository.bucketSize(sizeParam?.toIntOrNull() ?: 320)
             val file = runCatching {
                 runBlocking(Dispatchers.IO) { artwork.fileFor(key, size) }

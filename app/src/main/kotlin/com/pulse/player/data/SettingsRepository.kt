@@ -39,6 +39,9 @@ class SettingsRepository(private val context: Context) {
         val LOCAL_SEARCH_ENABLED = booleanPreferencesKey("local_search_enabled")
         val USER_API_ENDPOINTS = stringPreferencesKey("user_api_endpoints")
         val YOUTUBE_API_KEY = stringPreferencesKey("youtube_api_key")
+        val AUDIUS_API_KEY = stringPreferencesKey("audius_api_key")
+        val API_AUDIUS_ENABLED = booleanPreferencesKey("api_audius_enabled")
+        val API_YOUTUBE_ENABLED = booleanPreferencesKey("api_youtube_enabled")
         val INCLUDE_MUSIC_VIDEOS_OLD = booleanPreferencesKey("include_music_videos")
         val VOLUME = longPreferencesKey("volume_bits")          // Float.toRawBits
         val SHUFFLE = booleanPreferencesKey("shuffle")
@@ -68,6 +71,9 @@ class SettingsRepository(private val context: Context) {
                 "localSearchEnabled" to (p[Keys.LOCAL_SEARCH_ENABLED] ?: true),
                 "apiEndpoints" to (p[Keys.USER_API_ENDPOINTS] ?: "[]"),
                 "youtubeApiKey" to (p[Keys.YOUTUBE_API_KEY] ?: ""),
+                "audiusApiKey" to (p[Keys.AUDIUS_API_KEY] ?: ""),
+                "apiAudiusEnabled" to (p[Keys.API_AUDIUS_ENABLED] ?: true),
+                "apiYoutubeEnabled" to (p[Keys.API_YOUTUBE_ENABLED] ?: true),
             )
         }
 
@@ -90,6 +96,7 @@ class SettingsRepository(private val context: Context) {
             "theme" -> Keys.THEME
             "apiEndpoints" -> Keys.USER_API_ENDPOINTS
             "youtubeApiKey" -> Keys.YOUTUBE_API_KEY
+            "audiusApiKey" -> Keys.AUDIUS_API_KEY
             else -> stringPreferencesKey(key)
         }
         context.settingsDataStore.edit { it[prefKey] = value }
@@ -104,6 +111,8 @@ class SettingsRepository(private val context: Context) {
             "keepScreenAwake" -> Keys.KEEP_SCREEN_AWAKE
             "onlineSearchEnabled" -> Keys.ONLINE_SEARCH_ENABLED
             "localSearchEnabled" -> Keys.LOCAL_SEARCH_ENABLED
+            "apiAudiusEnabled" -> Keys.API_AUDIUS_ENABLED
+            "apiYoutubeEnabled" -> Keys.API_YOUTUBE_ENABLED
             else -> booleanPreferencesKey(key)
         }
         context.settingsDataStore.edit { it[prefKey] = value }

@@ -226,9 +226,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        webView.removeJavascriptInterface(NATIVE_OBJECT)
-        rootContainer.removeView(webView)
-        webView.destroy()
+        // Guard every step: a half-created activity (e.g. killed during startup) must not
+        // crash while being destroyed.
+        if (::webView.isInitialized) {
+            pageReady = false
+            runCatching { webView.stopLoading() }
+            runCatching { webView.removeJavascriptInterface(NATIVE_OBJECT) }
+            if (::rootContainer.isInitialized) runCatching { rootContainer.removeView(webView) }
+            runCatching { webView.destroy() }
+        }
         super.onDestroy()
     }
 
@@ -288,7 +294,12 @@ class MainActivity : ComponentActivity() {
     private fun applyInsetsToWeb(topDp: Int, bottomDp: Int) {
         val script = "document.documentElement.style.setProperty('--safe-b','${bottomDp}px');" +
                 "document.documentElement.style.setProperty('--safe-t','${topDp}px');"
-        runOnUiThread { webView.evaluateJavascript(script, null) }
+        runOnUiThread {
+            // Events can arrive after the activity is gone (service/scan threads).
+            if (!isFinishing && !isDestroyed && ::webView.isInitialized) {
+                runCatching { webView.evaluateJavascript(script, null) }
+            }
+        }
     }
 
     private fun markPageReady() {
