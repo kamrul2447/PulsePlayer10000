@@ -3,6 +3,7 @@ package com.pulse.player
 import android.app.Application
 import com.pulse.player.ads.AdRepository
 import com.pulse.player.di.ServiceLocator
+import com.pulse.player.search.NewPipeYouTubeAudioSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +23,11 @@ class PulseApp : Application() {
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)
+
+        // Initialize NewPipeExtractor for native YouTube search & stream resolution off main thread
+        appScope.launch {
+            NewPipeYouTubeAudioSource.init()
+        }
 
         // Warms the database and the artwork cache off the main thread.
         appScope.launch {

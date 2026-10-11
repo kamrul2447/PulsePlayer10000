@@ -29,3 +29,17 @@
     public static int d(...);
     public static int i(...);
 }
+
+# NewPipeExtractor, Rhino JS engine, Jackson JSON
+-keep class org.schabi.newpipe.extractor.** { *; }
+-keepclassmembers class org.schabi.newpipe.extractor.** { *; }
+-dontwarn org.schabi.newpipe.extractor.**
+
+-keep class org.mozilla.javascript.** { *; }
+-keepclassmembers class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.javascript.**
+
+-keep class com.fasterxml.jackson.** { *; }
+-keepclassmembers class com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**
+
