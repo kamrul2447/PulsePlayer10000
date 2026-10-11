@@ -86,6 +86,10 @@ class CommandDispatcher(
         )
     }
 
+    private fun logStep(step: String, t: Throwable) {
+        android.util.Log.e("CommandDispatcher", "Startup step failed: $step", t)
+    }
+
     private fun launchSafe(block: suspend CoroutineScope.() -> Unit): Job =
         scope.launch(context = commandExceptionHandler, block = block)
 
@@ -182,17 +186,20 @@ class CommandDispatcher(
                 BridgeProtocol.EVENT_ONLINE_STATUS,
                 "available" to context.isNetworkAvailable()
             )
-            AdRepository.publish()
-            FavoritesPublisher.publish(library)
-            publishArchive()
-            publishReviewQueue()
+            // Library FIRST. Nothing below may be allowed to stop the song list from
+            // reaching the UI: every step is isolated so one failure cannot skip the rest.
+            runCatching { publishLibrary() }.onFailure { logStep("publishLibrary(initial)", it) }
+            runCatching { AdRepository.publish() }.onFailure { logStep("ads", it) }
+            runCatching { FavoritesPublisher.publish(library) }.onFailure { logStep("favorites", it) }
+            runCatching { publishArchive() }.onFailure { logStep("archive", it) }
+            runCatching { publishReviewQueue() }.onFailure { logStep("review", it) }
 
             // Remove stale non-song rows created by older scanner versions before
             // the UI paints cached data. This never deletes the real files.
-            library.purgeKnownNonSongs()
+            runCatching { library.purgeKnownNonSongs() }.onFailure { logStep("purge", it) }
 
-            // Ship whatever we already have cached, so the UI paints instantly…
-            publishLibrary()
+            // Publish again after the purge so the UI never keeps stale rows.
+            runCatching { publishLibrary() }.onFailure { logStep("publishLibrary(after purge)", it) }
             // …then refresh from MediaStore in the background.
             if (settingsMap["scanOnStart"] as? Boolean != false) {
                 delay(120)
@@ -254,6 +261,10 @@ class CommandDispatcher(
 
     /** Full snapshot for a UI that just (re)connected. */
     suspend fun publishSnapshot() {
+        // The song list does not depend on the player connection. Send it even when the
+        // MediaController has not connected yet; otherwise the Library stays empty until
+        // something else (like starting playback) triggers another snapshot.
+        runCatching { publishLibrary() }.onFailure { logStep("publishLibrary(snapshot)", it) }
         try {
             val controller = controllerProvider() ?: return
             val uids = ArrayList<String>(controller.mediaItemCount)
@@ -291,7 +302,6 @@ class CommandDispatcher(
             )
             FavoritesPublisher.publish(library)
             publishArchive()
-            publishLibrary()
             publishReviewQueue()
         } catch (t: Throwable) {
             android.util.Log.e("CommandDispatcher", "Snapshot failed", t)
