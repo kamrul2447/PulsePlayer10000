@@ -135,29 +135,45 @@ android {
 val webDir: File = rootProject.file("web")
 val includeWebMock: Boolean = (project.findProperty("pulseWebMock") as String?) != "false"
 
+// Validate the checked-in frontend during configuration, not inside a task action.
+// Task actions that capture variables from this Gradle script cannot be serialized
+// reliably by Gradle's configuration cache.
+if (!webDir.isDirectory) {
+    throw GradleException(
+        "Pulse Player web source is missing at ${webDir.absolutePath}. Restore the repository web/ directory before building."
+    )
+}
+val requiredWebFiles = listOf("index.html", "js/core/bridge.js", "js/app.js", "css/app.css")
+val missingWebFiles = requiredWebFiles.filterNot { webDir.resolve(it).isFile }
+if (missingWebFiles.isNotEmpty()) {
+    throw GradleException(
+        "Pulse Player web source is incomplete. Missing: ${missingWebFiles.joinToString()}"
+    )
+}
+
+val webAssetsDir = layout.projectDirectory.dir("src/main/assets/web")
+
 val syncWebAssets by tasks.registering(Sync::class) {
     description = "Copies the version-controlled Pulse Player web frontend into the app assets."
     group = "pulse"
-    doFirst {
-        check(webDir.isDirectory) {
-            "Pulse Player web source is missing at ${webDir.absolutePath}. Restore the repository web/ directory before building."
-        }
-        check(webDir.resolve("index.html").isFile && webDir.resolve("js/core/bridge.js").isFile) {
-            "Pulse Player web source is incomplete. Expected web/index.html and web/js/core/bridge.js."
-        }
-    }
     from(webDir) {
         if (!includeWebMock) exclude("js/mock/**")
         exclude(".*")
     }
-    into(layout.projectDirectory.dir("src/main/assets/web"))
+    into(webAssetsDir)
 }
 
-tasks.named("preBuild") { dependsOn(syncWebAssets) }
+val deleteGeneratedWebAssets by tasks.registering(Delete::class) {
+    description = "Removes generated WebView assets."
+    group = "pulse"
+    delete(webAssetsDir)
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncWebAssets)
+}
 tasks.named("clean") {
-    doFirst {
-        if (webDir.exists()) delete(layout.projectDirectory.dir("src/main/assets/web"))
-    }
+    dependsOn(deleteGeneratedWebAssets)
 }
 
 dependencies {
