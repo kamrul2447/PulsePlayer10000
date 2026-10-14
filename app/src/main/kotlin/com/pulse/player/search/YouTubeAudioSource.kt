@@ -18,6 +18,9 @@ import org.schabi.newpipe.extractor.stream.StreamType
 import java.net.URI
 import java.util.concurrent.TimeUnit
 
+private const val MAX_PLAYLIST_TRACKS = 150
+private const val MAX_PLAYLIST_PAGES = 25
+
 const val YOUTUBE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
 interface YouTubeAudioSource {
@@ -25,7 +28,7 @@ interface YouTubeAudioSource {
     suspend fun resolveAudioUrl(videoId: String): String?
     suspend fun loadPlaylist(
         url: String,
-        limit: Int = 1000,
+        limit: Int = 150,
         onProgress: ((YouTubePlaylist, Boolean) -> Unit)? = null
     ): YouTubePlaylist
     suspend fun related(videoId: String, limit: Int = 15): List<TrackSearchResult>
@@ -125,13 +128,14 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
         }
 
         val title = extractor.name.trim().ifBlank { "YouTube playlist" }
-        val maximum = limit.coerceIn(1, 1000)
+        val maximum = limit.coerceIn(1, MAX_PLAYLIST_TRACKS)
         val result = ArrayList<TrackSearchResult>()
         val seen = HashSet<String>()
         var page = extractor.initialPage
         var pagesRead = 0
+        val pageLimit = MAX_PLAYLIST_PAGES
 
-        while (result.size < maximum) {
+        while (result.size < maximum && pagesRead < pageLimit) {
             page.items.orEmpty().filterIsInstance<StreamInfoItem>().forEach { item ->
                 if (result.size >= maximum) return@forEach
                 val track = toResult(item) ?: return@forEach
@@ -140,7 +144,7 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
             pagesRead++
 
             val nextPage = page.nextPage
-            val complete = result.size >= maximum || nextPage == null
+            val complete = result.size >= maximum || nextPage == null || pagesRead >= pageLimit
             // Show the first page immediately, then batch updates to avoid
             // repeatedly serializing the whole playlist after every tiny page.
             if (result.isNotEmpty() && (pagesRead == 1 || pagesRead % 3 == 0 || complete)) {
