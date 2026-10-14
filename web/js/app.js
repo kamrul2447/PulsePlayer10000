@@ -396,26 +396,21 @@
     var recent = state.tracks.slice(0, 5);
     var count = state.tracks.length;
     var current = state.current;
-    var heroTitle = current && current.title ? "Pick up where you left off." : "Your music, without the clutter.";
-    var heroText = current && current.title
-      ? "Your queue is ready whenever you are."
-      : "A focused home for the songs on your device and the music you discover.";
-    var feature = current && current.title
-      ? '<button type="button" class="home-feature" data-action="view" data-view="player"><div class="home-feature-cover">' + coverMarkup(current, 320) + '</div><div class="home-feature-copy"><span class="home-feature-label">NOW PLAYING</span><strong>' + esc(current.title) + '</strong><span>' + esc(current.artist || "Unknown artist") + '</span><span class="home-feature-open">' + icon("play", 13) + ' Open player</span></div></button>'
-      : '<div class="home-stats"><div><span>LOCAL TRACKS</span><strong>' + fmtCount(count) + '</strong></div><div><span>FAVORITES</span><strong>' + fmtCount(state.favorites.size) + '</strong></div><div><span>IN QUEUE</span><strong>' + fmtCount(state.queue.length) + '</strong></div></div>';
-
-    return '<section class="hero home-hero"><div class="hero-copy"><div class="hero-badge">' + icon("headphones", 14) + ' PULSE PLAYER</div><h2>' + heroTitle + '</h2><p>' + heroText + '</p><div class="hero-actions">' +
-      (current && current.title ? '<button class="button primary" data-action="view" data-view="player">' + icon("play", 16) + ' Continue listening</button>' : '<button class="button primary" data-action="view" data-view="library">' + icon("library", 16) + ' Open library</button>') +
-      '<button class="button ghost" data-action="view" data-view="search">' + icon("search", 16) + ' Discover music</button></div></div>' +
-      feature + '</section>' +
-      '<div class="section-heading"><div><h2>Your collection</h2><p>Quick access to the music you return to.</p></div></div>' +
+    var heroTitle = current && current.title ? "Pick up where you left off." : "Your music, ready to play.";
+    var heroText = current && current.title ? "Continue listening, or choose something else." : "Your songs on this phone, plus music you find online.";
+    return '<section class="hero"><div class="hero-copy"><div class="hero-badge">' + icon("zap", 14) + ' Your music</div><h2>' + heroTitle + '</h2><p>' + heroText + '</p><div class="hero-actions">' +
+      (current && current.title ? '<button class="button primary" data-action="view" data-view="player">' + icon("play", 16) + ' Return to player</button>' : '<button class="button primary" data-action="view" data-view="library">' + icon("library", 16) + ' Open library</button>') +
+      '<button class="button ghost" data-action="view" data-view="search">' + icon("globe", 16) + ' Discover online</button></div></div>' +
+      '<div class="hero-art"><div class="hero-orbit"></div><div class="hero-disc"><div class="hero-wave"></div><div class="hero-wave wave-two"></div><div class="hero-wave wave-three"></div></div></div></section>' +
+      '<div class="section-heading"><div><h2>Your music</h2><p>Open your library, continue listening, or find something new.</p></div></div>' +
       '<div class="quick-grid">' +
-      '<button class="quick-card" data-action="view" data-view="library"><span class="quick-icon">' + icon("library", 20) + '</span><div><strong>Library</strong><span>' + fmtCount(count) + ' local tracks</span></div></button>' +
+      '<button class="quick-card" data-action="view" data-view="library"><span class="quick-icon">' + icon("library", 20) + '</span><div><strong>Local library</strong><span>' + fmtCount(count) + ' songs on this device</span></div></button>' +
       '<button class="quick-card" data-action="view" data-view="favorites"><span class="quick-icon">' + icon("heart", 20) + '</span><div><strong>Favorites</strong><span>' + fmtCount(state.favorites.size) + ' saved tracks</span></div></button>' +
-      '<button class="quick-card" data-action="view" data-view="queue"><span class="quick-icon">' + icon("queue", 20) + '</span><div><strong>Play queue</strong><span>' + fmtCount(state.queue.length) + ' tracks ready</span></div></button>' +
-      '</div><div class="section-heading"><div><h2>Recently available</h2><p>' + (count ? "Tracks ready to play on this device." : "Scan your device to build your library.") + '</p></div><button class="button ghost" data-action="view" data-view="library">View library ' + icon("chevron", 15) + '</button></div>' +
+      '<button class="quick-card" data-action="view" data-view="queue"><span class="quick-icon">' + icon("queue", 20) + '</span><div><strong>Play queue</strong><span>' + fmtCount(state.queue.length) + ' tracks in the queue</span></div></button>' +
+      '</div><div class="section-heading"><div><h2>On your device</h2><p>' + (count ? "Your recently available local tracks." : "Scan to make your music appear here.") + '</p></div><button class="button ghost" data-action="view" data-view="library">View all ' + icon("chevron", 15) + '</button></div>' +
       (recent.length ? renderTrackList(recent) : renderTrackList([])) +
-      '<div class="section-heading"><div><h2>Online discovery</h2><p>Search YouTube without leaving the player.</p></div><button class="button ghost" data-action="view" data-view="search">' + icon("search", 15) + ' Search music</button></div>';
+      '<div class="section-heading"><div><h2>Playback</h2><p>Simple controls, without getting in your way.</p></div></div>' +
+      '<div class="panel"><div class="setting-row"><div class="setting-copy"><strong>Online search</strong><span>Search YouTube when you are connected to the internet.</span></div><button class="button ghost" data-action="view" data-view="search">Search songs ' + icon("chevron", 14) + '</button></div></div>';
   }
 
   function renderLibrary() {
@@ -466,7 +461,7 @@
       return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("search", 25) +
         '</div><h3>Find a song</h3><p>' + intro + '</p>' +
         (state.settings.onlineSearchEnabled
-          ? '<p class="muted-note">Playlist links load their track list. Tap Play playlist to start the full queue.</p>'
+          ? ''
           : '<button class="button primary" data-action="view" data-view="settings">' + icon("settings", 15) + ' Settings</button>') +
         '</div>';
     }
@@ -494,15 +489,11 @@
       grouped[key].push({ item: item, index: index });
     });
     if (state.searchIsPlaylist) {
-      var playlistStatus = state.searchLoading
-        ? '<p class="playlist-status"><span class="loading-indicator"></span>' + fmtCount(state.searchResults.length) + ' tracks loaded · collecting the rest from YouTube</p>'
-        : '<p>' + fmtCount(state.searchResults.length) + ' tracks</p>';
-      return searchInput + '<div class="section-heading playlist-heading"><div><h2>' +
-        esc(state.searchPlaylistTitle || "YouTube playlist") + '</h2>' + playlistStatus + '</div>' +
-        '<button class="button primary" data-action="play-playlist" title="' +
-        (state.searchLoading ? 'Play loaded tracks while the rest are collected' : 'Play all playlist tracks') + '">' +
-        icon("play", 15) + (state.searchLoading ? ' Play loaded tracks' : ' Play playlist') +
-        '</button></div><div class="track-list">' +
+      var playlistCount = fmtCount(state.searchResults.length) + " tracks";
+      return searchInput + '<div class="section-heading"><div><h2>' +
+        esc(state.searchPlaylistTitle || "YouTube playlist") + '</h2><p>' + playlistCount + '</p></div>' +
+        '<button class="button primary" data-action="play-playlist">' + icon("play", 15) +
+        ' Play playlist</button></div><div class="track-list">' +
         state.searchResults.map(renderPlaylistTrackRow).join("") + '</div>';
     }
 
