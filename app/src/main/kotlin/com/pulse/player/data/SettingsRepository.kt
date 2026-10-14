@@ -67,25 +67,29 @@ class SettingsRepository(private val context: Context) {
                 "scanOnStart" to (p[Keys.SCAN_ON_START] ?: true),
                 "hideShortClips" to (p[Keys.HIDE_SHORT_CLIPS] ?: true),
                 "keepScreenAwake" to (p[Keys.KEEP_SCREEN_AWAKE] ?: false),
-                "onlineSearchEnabled" to (p[Keys.ONLINE_SEARCH_ENABLED] ?: false),
+                "onlineSearchEnabled" to (p[Keys.ONLINE_SEARCH_ENABLED] ?: true),
                 "localSearchEnabled" to (p[Keys.LOCAL_SEARCH_ENABLED] ?: true),
-                "apiEndpoints" to (p[Keys.USER_API_ENDPOINTS] ?: "[]"),
-                "youtubeApiKey" to (p[Keys.YOUTUBE_API_KEY] ?: ""),
-                "audiusApiKey" to (p[Keys.AUDIUS_API_KEY] ?: ""),
-                "apiAudiusEnabled" to (p[Keys.API_AUDIUS_ENABLED] ?: true),
-                "apiYoutubeEnabled" to (p[Keys.API_YOUTUBE_ENABLED] ?: true),
             )
         }
 
     suspend fun current(): Map<String, Any?> {
         val p = context.settingsDataStore.data.first()
         val version = p[Keys.SETTINGS_VERSION] ?: 0
-        if (version < 6) {
+        if (version < 7) {
             context.settingsDataStore.edit { prefs ->
-                // v6 removes the old video-library setting. Pulse is now strictly
-                // song-only; the old preference is intentionally discarded.
+                // v7 removes the optional provider/key manager. YouTube search now
+                // uses the existing NewPipe extractor and requires no Data API key.
                 prefs.remove(Keys.INCLUDE_MUSIC_VIDEOS_OLD)
-                prefs[Keys.SETTINGS_VERSION] = 6
+                prefs.remove(Keys.USER_API_ENDPOINTS)
+                prefs.remove(Keys.YOUTUBE_API_KEY)
+                prefs.remove(Keys.AUDIUS_API_KEY)
+                prefs.remove(Keys.API_AUDIUS_ENABLED)
+                prefs.remove(Keys.API_YOUTUBE_ENABLED)
+                // Preserve explicit choices. Fresh installs do not need an API setup screen.
+                if (prefs[Keys.ONLINE_SEARCH_ENABLED] == null) {
+                    prefs[Keys.ONLINE_SEARCH_ENABLED] = true
+                }
+                prefs[Keys.SETTINGS_VERSION] = 7
             }
         }
         return settings.first()
@@ -94,9 +98,6 @@ class SettingsRepository(private val context: Context) {
     suspend fun setString(key: String, value: String) {
         val prefKey = when (key) {
             "theme" -> Keys.THEME
-            "apiEndpoints" -> Keys.USER_API_ENDPOINTS
-            "youtubeApiKey" -> Keys.YOUTUBE_API_KEY
-            "audiusApiKey" -> Keys.AUDIUS_API_KEY
             else -> stringPreferencesKey(key)
         }
         context.settingsDataStore.edit { it[prefKey] = value }
@@ -111,8 +112,6 @@ class SettingsRepository(private val context: Context) {
             "keepScreenAwake" -> Keys.KEEP_SCREEN_AWAKE
             "onlineSearchEnabled" -> Keys.ONLINE_SEARCH_ENABLED
             "localSearchEnabled" -> Keys.LOCAL_SEARCH_ENABLED
-            "apiAudiusEnabled" -> Keys.API_AUDIUS_ENABLED
-            "apiYoutubeEnabled" -> Keys.API_YOUTUBE_ENABLED
             else -> booleanPreferencesKey(key)
         }
         context.settingsDataStore.edit { it[prefKey] = value }

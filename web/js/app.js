@@ -9,6 +9,7 @@
     tracks: [],
     favorites: new Set(),
     queue: [],
+    queueItems: [],
     currentUid: null,
     current: null,
     playing: false,
@@ -26,13 +27,8 @@
       scanOnStart: true,
       hideShortClips: true,
       keepScreenAwake: false,
-      onlineSearchEnabled: false,
-      localSearchEnabled: true,
-      apiEndpoints: "[]",
-      youtubeApiKeySet: false,
-      audiusApiKeySet: false,
-      apiYoutubeEnabled: true,
-      apiAudiusEnabled: true
+      onlineSearchEnabled: true,
+      localSearchEnabled: true
     },
     online: false,
     scan: { state: "idle", found: 0, total: 0 },
@@ -41,10 +37,8 @@
     searchMessage: "",
     searchProvider: "",
     searchLoading: false,
-    apiMenuOpen: false,
-    apis: [],
-    apiActivity: [],
-    apiScanning: false,
+    searchIsPlaylist: false,
+    searchPlaylistTitle: "",
     archive: [],
     reviewQueue: [],
     menuTrackUid: null,
@@ -56,7 +50,7 @@
   };
 
   var titles = {
-    home: ["YOUR SPACE", "Good sound starts here"],
+    home: ["YOUR SPACE", "Listen"],
     library: ["YOUR COLLECTION", "Library"],
     search: ["DISCOVER", "Online search"],
     favorites: ["YOUR COLLECTION", "Favorites"],
@@ -167,7 +161,6 @@
     state.view = view;
     state.menuTrackUid = null;
     render();
-    if (view === "settings") bridge.send("listApis", {});
     if (view === "queue") bridge.send("restoreQueue", {});
     if (view === "library" || view === "favorites") {
       // Always show the locally cached library; playback state never decides visibility.
@@ -260,16 +253,42 @@
     }
   }
 
+  function findYouTubePlaylistUrl(value) {
+    try {
+      var url = new URL(value);
+      var host = url.hostname.toLowerCase().replace(/^www\./, "");
+      if (["youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"].indexOf(host) < 0) return null;
+      var playlistId = url.searchParams.get("list");
+      if (!playlistId || !/^[A-Za-z0-9_-]+$/.test(playlistId)) return null;
+      return "https://www.youtube.com/playlist?list=" + encodeURIComponent(playlistId);
+    } catch (error) {
+      return null;
+    }
+  }
+
   function submitOnlineSearch(rawValue) {
     var query = String(rawValue || "").trim();
     state.searchQuery = query;
     state.searchMessage = "";
     state.searchResults = [];
     state.searchLoading = false;
+    state.searchIsPlaylist = false;
+    state.searchPlaylistTitle = "";
     if (!query) {
       bridge.send("cancelSearch", {});
       state.searchProvider = "";
       render();
+      return;
+    }
+
+    // Check playlist IDs first. Many playlist links also contain v=VIDEO_ID;
+    // parsing the video first was why the app showed just one song.
+    var playlistUrl = findYouTubePlaylistUrl(query);
+    if (playlistUrl) {
+      state.searchLoading = true;
+      state.searchIsPlaylist = true;
+      render();
+      bridge.send("loadYouTubePlaylist", { url: playlistUrl });
       return;
     }
 
@@ -279,35 +298,27 @@
         id: video.id,
         title: "YouTube video",
         artist: "YouTube",
-        album: "",
+        album: "YouTube",
         artworkUrl: "https://i.ytimg.com/vi/" + video.id + "/hqdefault.jpg",
         durationMs: 0,
-        streamUrl: "",
+        streamUrl: "pulse-yt://" + video.id,
         previewOnly: false,
         provider: "youtube",
         source: "online"
       }];
-      state.searchMessage = video.hasPlaylist
-        ? "This link includes a playlist, but the current native bridge can only resolve the selected video. Playlist importing needs a dedicated native playlist endpoint."
-        : "Video link recognized. Select Play to start it.";
-      render();
-      return;
-    }
-
-    if (/youtube\.com\/playlist|[?&]list=/.test(query)) {
-      state.searchMessage = "The current Android bridge does not expose a playlist-loading command yet. Search for a song or paste a single YouTube video URL.";
+      state.searchMessage = "Video link found. Press Play to listen.";
       render();
       return;
     }
 
     if (!state.settings.onlineSearchEnabled) {
-      state.searchMessage = "Online search is turned off. Enable it in Settings to search YouTube, Audius, and configured APIs.";
+      state.searchMessage = "Online search is turned off. Switch it on in Settings to search YouTube.";
       render();
       return;
     }
 
     if (!state.online) {
-      state.searchMessage = "Connect to the internet to search online music.";
+      state.searchMessage = "Connect to the internet to search YouTube.";
       render();
       return;
     }
@@ -378,21 +389,21 @@
     var recent = state.tracks.slice(0, 5);
     var count = state.tracks.length;
     var current = state.current;
-    var heroTitle = current && current.title ? "Let the music move you." : "Find your frequency.";
-    var heroText = current && current.title ? "Pick up where you left off, or let the next track set the mood." : "Your tracks, your rhythm, one calm place for all the music on your device.";
-    return '<section class="hero"><div class="hero-copy"><div class="hero-badge">' + icon("zap", 14) + ' A little more in tune</div><h2>' + heroTitle + '</h2><p>' + heroText + '</p><div class="hero-actions">' +
+    var heroTitle = current && current.title ? "Pick up where you left off." : "Your music, ready to play.";
+    var heroText = current && current.title ? "Continue listening, or choose something else." : "Your songs on this phone, plus music you find online.";
+    return '<section class="hero"><div class="hero-copy"><div class="hero-badge">' + icon("zap", 14) + ' Your music</div><h2>' + heroTitle + '</h2><p>' + heroText + '</p><div class="hero-actions">' +
       (current && current.title ? '<button class="button primary" data-action="view" data-view="player">' + icon("play", 16) + ' Return to player</button>' : '<button class="button primary" data-action="view" data-view="library">' + icon("library", 16) + ' Open library</button>') +
       '<button class="button ghost" data-action="view" data-view="search">' + icon("globe", 16) + ' Discover online</button></div></div>' +
       '<div class="hero-art"><div class="hero-orbit"></div><div class="hero-disc"><div class="hero-wave"></div><div class="hero-wave wave-two"></div><div class="hero-wave wave-three"></div></div></div></section>' +
-      '<div class="section-heading"><div><h2>Your listening space</h2><p>A few quick ways to get moving.</p></div></div>' +
+      '<div class="section-heading"><div><h2>Your music</h2><p>Open your library, continue listening, or find something new.</p></div></div>' +
       '<div class="quick-grid">' +
       '<button class="quick-card" data-action="view" data-view="library"><span class="quick-icon">' + icon("library", 20) + '</span><div><strong>Local library</strong><span>' + fmtCount(count) + ' songs on this device</span></div></button>' +
       '<button class="quick-card" data-action="view" data-view="favorites"><span class="quick-icon">' + icon("heart", 20) + '</span><div><strong>Favorites</strong><span>' + fmtCount(state.favorites.size) + ' saved tracks</span></div></button>' +
       '<button class="quick-card" data-action="view" data-view="queue"><span class="quick-icon">' + icon("queue", 20) + '</span><div><strong>Play queue</strong><span>' + fmtCount(state.queue.length) + ' tracks in the queue</span></div></button>' +
       '</div><div class="section-heading"><div><h2>On your device</h2><p>' + (count ? "Your recently available local tracks." : "Scan to make your music appear here.") + '</p></div><button class="button ghost" data-action="view" data-view="library">View all ' + icon("chevron", 15) + '</button></div>' +
       (recent.length ? renderTrackList(recent) : renderTrackList([])) +
-      '<div class="section-heading"><div><h2>Keep it flowing</h2><p>Simple controls, without getting in your way.</p></div></div>' +
-      '<div class="panel"><div class="setting-row"><div class="setting-copy"><strong>Online search</strong><span>Search YouTube, Audius, and any configured JSON music API when internet is available.</span></div><button class="button ghost" data-action="view" data-view="settings">Configure ' + icon("chevron", 14) + '</button></div></div>';
+      '<div class="section-heading"><div><h2>Playback</h2><p>Simple controls, without getting in your way.</p></div></div>' +
+      '<div class="panel"><div class="setting-row"><div class="setting-copy"><strong>Online search</strong><span>Search YouTube when you are connected to the internet.</span></div><button class="button ghost" data-action="view" data-view="search">Search songs ' + icon("chevron", 14) + '</button></div></div>';
   }
 
   function renderLibrary() {
@@ -419,46 +430,105 @@
       '<div class="online-card-actions"><button class="button primary" data-action="play-online" data-index="' + index + '">' + icon("play", 13) + ' Play</button><button class="button" title="Add to archive" aria-label="Add to archive" data-action="archive-online" data-index="' + index + '">' + icon("archive", 14) + '</button></div></article>';
   }
 
+  function renderPlaylistTrackRow(item, index) {
+    return '<div class="track-row"><span class="track-index">' + (index + 1) + '</span>' +
+      coverMarkup(item, 96) +
+      '<div class="track-copy" data-action="play-online" data-index="' + index + '" role="button" tabindex="0">' +
+      '<div class="track-title">' + esc(item.title || "Unknown title") + '</div>' +
+      '<div class="track-meta"><span>' + esc(item.artist || "YouTube") + '</span><span class="dot-sep">•</span><span>YouTube</span></div></div>' +
+      '<span class="track-duration">' + fmtTime(item.durationMs) + '</span>' +
+      '<div class="row-actions"><button class="icon-button" title="Play track" aria-label="Play track" data-action="play-online" data-index="' + index + '">' +
+      icon("play", 15) + '</button><button class="icon-button" title="Archive track" aria-label="Archive track" data-action="archive-online" data-index="' + index + '">' +
+      icon("archive", 15) + '</button></div></div>';
+  }
+
   function renderSearch() {
-    var searchInput = '<div class="toolbar"><label class="search-field">' + icon("search", 18) + '<input id="online-search" type="search" placeholder="Search YouTube, Audius, or paste a video link" value="' + esc(state.searchQuery) + '" autocomplete="off" spellcheck="false"><button class="icon-button" data-action="clear-online-search" aria-label="Clear search">' + icon("close", 15) + '</button></label>' +
-      '<button class="icon-button' + (state.apiMenuOpen ? " active" : "") + '" aria-label="Search API options" title="Search API options" data-action="toggle-api-menu">' + icon("more", 18) + '</button>' +
-      (state.apiMenuOpen ? '<div class="api-popover"><strong>Online sources</strong><p>Manage providers, keys, and custom HTTPS JSON APIs.</p><button class="button primary" data-action="view" data-view="settings">' + icon("sliders", 15) + ' Open API settings</button><button class="button ghost" data-action="scan-apis">' + icon("refresh", 15) + ' Test enabled APIs</button></div>' : "") +
-      '</div>';
+    var searchInput = '<div class="toolbar"><label class="search-field">' + icon("search", 18) +
+      '<input id="online-search" type="search" placeholder="Search YouTube or paste a video / playlist link" value="' + esc(state.searchQuery) + '" autocomplete="off" spellcheck="false">' +
+      '<button class="icon-button" data-action="clear-online-search" aria-label="Clear search">' + icon("close", 15) + '</button></label></div>';
+
     if (!state.searchQuery) {
       var intro = state.settings.onlineSearchEnabled
-        ? "Search supported music sources, or paste a direct YouTube video URL."
-        : "Online search is optional. Turn it on in Settings when you want to discover music.";
-      return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("globe", 25) + '</div><h3>Something new to listen to</h3><p>' + intro + '</p>' +
-        (state.settings.onlineSearchEnabled ? '<button class="button ghost" data-action="scan-apis">' + icon("refresh", 15) + ' Check API status</button>' : '<button class="button primary" data-action="view" data-view="settings">' + icon("settings", 15) + ' Enable online search</button>') + '</div>';
+        ? "Search for a track, or paste a YouTube video or playlist link."
+        : "Turn on YouTube search in Settings to find music.";
+      return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("search", 25) +
+        '</div><h3>Find a song</h3><p>' + intro + '</p>' +
+        (state.settings.onlineSearchEnabled
+          ? '<p class="muted-note">Playlist links load their track list. Tap Play playlist to start the full queue.</p>'
+          : '<button class="button primary" data-action="view" data-view="settings">' + icon("settings", 15) + ' Settings</button>') +
+        '</div>';
     }
-    if (state.searchLoading) return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("refresh", 24) + '</div><h3>Looking for your next track…</h3><p>Searching enabled providers. Results will appear here.</p></div>';
-    if (state.searchMessage) return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon(state.searchMessage.indexOf("recognized") >= 0 ? "check" : "info", 24) + '</div><h3>' + (state.searchResults.length ? "Video link detected" : "A quick note") + '</h3><p>' + esc(state.searchMessage) + '</p></div>' + (state.searchResults.length ? '<div class="online-result-grid">' + state.searchResults.map(renderOnlineCard).join("") + '</div>' : "");
-    if (!state.searchResults.length) return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("search", 24) + '</div><h3>No results yet</h3><p>Try a different query, or check that online search and at least one API provider are enabled.</p><button class="button ghost" data-action="scan-apis">' + icon("refresh", 15) + ' Test APIs</button></div>';
+    if (state.searchLoading) return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("refresh", 24) +
+      '</div><h3>' + (state.searchIsPlaylist ? "Loading playlist…" : "Searching YouTube…") + '</h3><p>Getting the track list. Large playlists can take a little longer.</p></div>';
+
+    if (state.searchMessage) {
+      return searchInput + '<div class="empty-state"><div class="empty-orb">' +
+        icon(state.searchResults.length ? "check" : "info", 24) + '</div><h3>' +
+        (state.searchResults.length ? "Ready to play" : "Nothing found") + '</h3><p>' + esc(state.searchMessage) +
+        '</p></div>' + (state.searchResults.length ? '<div class="online-result-grid">' +
+        state.searchResults.map(renderOnlineCard).join("") + '</div>' : "");
+    }
+
+    if (!state.searchResults.length) return searchInput + '<div class="empty-state"><div class="empty-orb">' +
+      icon("search", 24) + '</div><h3>No results found</h3><p>Try another title, or check your internet connection.</p></div>';
 
     var grouped = {};
     state.searchResults.forEach(function (item, index) {
-      var key = item.provider || "Online";
+      var key = item.provider || "YouTube";
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push({ item: item, index: index });
     });
-    var output = searchInput + '<div class="section-heading"><div><h2>' + fmtCount(state.searchResults.length) + ' results</h2><p>' + esc(state.searchProvider || "Online sources") + '</p></div></div>';
+    if (state.searchIsPlaylist) {
+      return searchInput + '<div class="section-heading"><div><h2>' +
+        esc(state.searchPlaylistTitle || "YouTube playlist") + '</h2><p>' +
+        fmtCount(state.searchResults.length) + ' tracks</p></div>' +
+        '<button class="button primary" data-action="play-playlist">' + icon("play", 15) +
+        ' Play playlist</button></div><div class="track-list">' +
+        state.searchResults.map(renderPlaylistTrackRow).join("") + '</div>';
+    }
+
+    var output = searchInput + '<div class="section-heading"><div><h2>' +
+      fmtCount(state.searchResults.length) + ' results</h2><p>From YouTube</p></div></div>';
     Object.keys(grouped).forEach(function (provider) {
-      output += '<div class="provider-heading"><span>' + esc(provider) + '</span><span>' + grouped[provider].length + '</span></div><div class="online-result-grid">';
-      output += grouped[provider].map(function (entry) { return renderOnlineCard(entry.item, entry.index); }).join("");
+      output += '<div class="provider-heading"><span>' + esc(provider) + '</span><span>' + grouped[provider].length + '</span></div>';
+      output += '<div class="online-result-grid">';
+      output += grouped[provider].map(function (entry) {
+        return renderOnlineCard(entry.item, entry.index);
+      }).join("");
       output += '</div>';
     });
     return output;
   }
 
   function renderQueue() {
-    if (!state.queue.length) return '<div class="empty-state"><div class="empty-orb">' + icon("queue", 25) + '</div><h3>Your queue is clear</h3><p>Play a local song to start a queue, or browse your library first.</p><button class="button primary" data-action="view" data-view="library">' + icon("library", 15) + ' Browse library</button></div>';
+    if (!state.queue.length) return '<div class="empty-state"><div class="empty-orb">' + icon("queue", 25) +
+      '</div><h3>Queue is empty</h3><p>Play a song to start a queue, or pick a YouTube playlist.</p>' +
+      '<button class="button primary" data-action="view" data-view="library">' + icon("library", 15) + ' Open library</button></div>';
+
+    var itemsByUid = new Map();
+    (state.queueItems || []).forEach(function (item) { if (item && item.uid) itemsByUid.set(item.uid, item); });
     var rows = state.queue.map(function (uid, index) {
-      var track = state.tracks.find(function (item) { return item.uid === uid; });
-      if (!track && state.current && (state.currentUid === uid || state.current.uid === uid)) track = state.current;
-      if (!track) track = { uid: uid, title: uid, artist: "Queue item", duration: 0 };
-      return renderTrackRow(track, index);
+      var item = itemsByUid.get(uid) || null;
+      var local = state.tracks.find(function (track) { return track.uid === uid; });
+      if (local) item = Object.assign({}, local, item || {}, { source: (item && item.source) || "local" });
+      if (!item && state.current && (state.currentUid === uid || state.current.uid === uid)) item = state.current;
+      if (!item) item = { uid: uid, title: uid, artist: "Queue item", duration: 0 };
+
+      var online = item.source === "online" || (item.provider || "").toLowerCase() === "youtube" || String(uid).indexOf("remote:") === 0;
+      var duration = item.durationMs ? item.durationMs : item.duration;
+      return '<div class="track-row"><button class="track-index icon-button" title="Play this queue item" data-action="play-queue-item" data-index="' + index + '">' +
+        (uid === state.currentUid && state.playing ? icon("volume", 14) : '<span>' + (index + 1) + '</span>') + '</button>' +
+        coverMarkup(item, 96) + '<div class="track-copy" data-action="play-queue-item" data-index="' + index + '" role="button" tabindex="0">' +
+        '<div class="track-title">' + esc(item.title || "Unknown title") + '</div><div class="track-meta"><span>' +
+        esc(item.artist || (online ? "YouTube" : "Unknown artist")) + '</span><span class="dot-sep">•</span><span>' +
+        esc(online ? "YouTube" : (item.album || item.folder || "On this device")) + '</span></div></div>' +
+        '<span class="track-duration">' + fmtTime(duration) + '</span><div class="row-actions">' +
+        (online ? '<span class="status-chip">Online</span>' : '') +
+        '<button class="icon-button" title="Play this item" aria-label="Play this item" data-action="play-queue-item" data-index="' + index + '">' +
+        icon("play", 15) + '</button></div></div>';
     }).join("");
-    return '<div class="section-heading"><div><h2>' + fmtCount(state.queue.length) + ' items</h2><p>Queue is controlled by the native Media3 player.</p></div><button class="button ghost" data-action="clear-queue">' + icon("trash", 15) + ' Clear queue</button></div><div class="track-list">' + rows + '</div>';
+    return '<div class="section-heading"><div><h2>' + fmtCount(state.queue.length) + ' tracks</h2><p>Playlist order and related songs appear here.</p></div>' +
+      '<button class="button ghost" data-action="clear-queue">' + icon("trash", 15) + ' Clear queue</button></div><div class="track-list">' + rows + '</div>';
   }
 
   function renderPlayer() {
@@ -496,50 +566,32 @@
 
   function settingSwitch(key, title, description) {
     var checked = state.settings[key] === true;
-    return '<div class="setting-row"><div class="setting-copy"><strong>' + title + '</strong><span>' + description + '</span></div><label class="switch"><input type="checkbox" data-setting="' + key + '" ' + (checked ? "checked" : "") + ' aria-label="' + title + '"><span class="switch-track"></span></label></div>';
-  }
-
-  function parseApis() {
-    try {
-      var value = state.settings.apiEndpoints;
-      var parsed = typeof value === "string" ? JSON.parse(value || "[]") : value;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
-  }
-
-  function renderApiCard(api) {
-    var status = api.state || "idle";
-    var pill = status === "ok" ? "Working" : (status === "needs_key" ? "Needs key" : (status === "error" ? "Error" : (status === "locked" ? "Disabled in build" : "Not tested")));
-    var toggle = api.kind === "ads" ? '<span class="api-status">Off in this build</span>' :
-      '<label class="switch"><input type="checkbox" data-api-toggle="' + esc(api.id) + '" ' + (api.enabled ? "checked" : "") + ' aria-label="Enable ' + esc(api.name) + '"><span class="switch-track"></span></label>';
-    return '<div class="api-card"><div class="api-head"><div class="api-symbol">' + icon(api.id === "youtube" ? "play" : (api.kind === "custom" ? "link" : "globe"), 17) + '</div><div class="api-info"><strong>' + esc(api.name || api.id) + '</strong><span>' + esc(api.host || api.kind || "Provider") + (api.keySource ? " · " + esc(api.keySource) : "") + '</span></div><span class="api-status ' + esc(status) + '">' + pill + '</span>' + toggle + '</div><div class="api-note">' + esc(api.message || "") + (api.ms ? ' · ' + esc(api.ms) + ' ms' : '') + '</div></div>';
+    return '<div class="setting-row"><div class="setting-copy"><strong>' + title +
+      '</strong><span>' + description + '</span></div><label class="switch"><input type="checkbox" data-setting="' +
+      key + '" ' + (checked ? "checked" : "") + ' aria-label="' + title +
+      '"><span class="switch-track"></span></label></div>';
   }
 
   function renderSettings() {
-    var apiCards = state.apis.length ? state.apis.map(renderApiCard).join("") : '<p class="muted-note">Loading API registry…</p>';
-    var customApis = parseApis();
-    return '<div class="panel-grid"><section class="panel"><h3>Appearance</h3><p>Keep the interface comfortable in any light.</p>' +
-      '<div class="setting-row"><div class="setting-copy"><strong>Theme</strong><span>Choose a dark, light, or system-matched interface.</span></div><select class="select-input theme-select" id="theme-select" aria-label="Theme"><option value="dark" ' + (state.settings.theme === "dark" ? "selected" : "") + '>Dark</option><option value="light" ' + (state.settings.theme === "light" ? "selected" : "") + '>Light</option><option value="system" ' + (state.settings.theme === "system" ? "selected" : "") + '>System</option></select></div>' +
-      settingSwitch("reduceMotion", "Reduce motion", "Tone down decorative movement and transitions.") +
-      settingSwitch("keepScreenAwake", "Keep screen awake", "Prevent the display from sleeping while the app is open.") +
-      '</section><section class="panel"><h3>Library & playback</h3><p>Control scanning and local playback behavior.</p>' +
-      settingSwitch("scanOnStart", "Scan on startup", "Refresh the local music library when Pulse opens.") +
-      settingSwitch("hideShortClips", "Hide short clips", "Filter very short audio files from the Songs list.") +
-      settingSwitch("resumeOnOpen", "Remember playback", "Keep a resume snapshot for the next app session.") +
-      settingSwitch("localSearchEnabled", "Local search", "Allow searching your device music library.") +
+    return '<div class="panel-grid"><section class="panel"><h3>Appearance</h3><p>Keep the player comfortable to use.</p>' +
+      '<div class="setting-row"><div class="setting-copy"><strong>Theme</strong><span>Use dark, light, or your phone setting.</span></div>' +
+      '<select class="select-input theme-select" id="theme-select" aria-label="Theme">' +
+      '<option value="dark" ' + (state.settings.theme === "dark" ? "selected" : "") + '>Dark</option>' +
+      '<option value="light" ' + (state.settings.theme === "light" ? "selected" : "") + '>Light</option>' +
+      '<option value="system" ' + (state.settings.theme === "system" ? "selected" : "") + '>System</option></select></div>' +
+      settingSwitch("reduceMotion", "Reduce motion", "Use fewer moving effects.") +
+      settingSwitch("keepScreenAwake", "Keep screen awake", "Keep the display on while Pulse is open.") +
+      '</section><section class="panel"><h3>Library & playback</h3><p>Choose how Pulse handles your music.</p>' +
+      settingSwitch("scanOnStart", "Scan on startup", "Refresh songs when Pulse opens.") +
+      settingSwitch("hideShortClips", "Hide short clips", "Leave tiny audio clips out of Songs.") +
+      settingSwitch("resumeOnOpen", "Remember playback", "Save your queue and last position.") +
+      settingSwitch("localSearchEnabled", "Search local songs", "Search your music stored on this phone.") +
+      settingSwitch("onlineSearchEnabled", "YouTube search", "Find songs and play full YouTube playlist links.") +
       '</section></div>' +
-      '<div class="section-heading"><div><h2>Online & APIs</h2><p>Online features are optional and only use enabled sources.</p></div><button class="button" data-action="scan-apis" ' + (state.apiScanning ? "disabled" : "") + '>' + icon("refresh", 15) + (state.apiScanning ? "Testing…" : "Test APIs") + '</button></div>' +
-      '<div class="panel">' + settingSwitch("onlineSearchEnabled", "Enable online search", "Allow the app to search enabled providers when connected to the internet.") +
-      '<div class="form-stack" style="margin-top:12px"><label class="form-label">YouTube Data API v3 key <input id="youtube-key" class="text-input" type="password" autocomplete="off" placeholder="' + (state.settings.youtubeApiKeySet ? "Key saved. Enter a replacement to update it." : "Optional. Paste your API key.") + '"></label><label class="form-label">Audius public API key <input id="audius-key" class="text-input" type="password" autocomplete="off" placeholder="' + (state.settings.audiusApiKeySet ? "Key saved. Enter a replacement to update it." : "Optional. Paste your public client key.") + '"></label><div><button class="button primary" data-action="save-api-keys">' + icon("save", 15) + ' Save keys</button></div></div>' +
-      '<div class="api-list">' + apiCards + '</div></div>' +
-      '<div class="section-heading"><div><h2>Custom JSON music APIs</h2><p>Use HTTPS GET endpoints returning a JSON array or common fields such as data, results, items, tracks, or songs.</p></div></div>' +
-      '<div class="panel"><div class="form-stack"><label class="form-label">API name<input class="text-input" id="custom-api-name" placeholder="My music API"></label><label class="form-label">HTTPS JSON endpoint<input class="text-input" id="custom-api-url" placeholder="https://example.com/api/search?q={query}"></label><p class="muted-note">Use {query} or {q} where the search term belongs. Do not paste passwords or private bearer tokens here.</p><div><button class="button primary" data-action="add-custom-api">' + icon("plus", 15) + ' Add API</button></div></div>' +
-      (customApis.length ? '<div class="custom-api-list"><div class="provider-heading">Configured custom APIs <span>' + customApis.length + '</span></div>' + customApis.map(function (api) { return '<div class="setting-row"><div class="setting-copy"><strong>' + esc(api.name || "Custom API") + '</strong><span>' + esc(api.url) + '</span></div><button class="icon-button" title="Remove API" aria-label="Remove API" data-action="delete-api" data-api-id="' + esc(api.id) + '">' + icon("trash", 15) + '</button></div>'; }).join("") + '</div>' : "") +
-      '</div><div class="section-heading"><div><h2>About Pulse</h2><p>Native Media3 handles playback; this interface talks to it through the versioned bridge.</p></div></div><div class="panel"><div class="setting-row"><div class="setting-copy"><strong>Current app interface</strong><span>Pulse Player WebView · bridge protocol v1</span></div><span class="api-status ' + (bridge.isNative() ? "ok" : "") + '">' + (bridge.isNative() ? "Connected" : "Browser preview") + '</span></div><div class="setting-row"><div class="setting-copy"><strong>API activity</strong><span>Last health-check messages reported by native providers.</span></div><button class="button ghost" data-action="scan-apis">' + icon("refresh", 14) + ' Refresh</button></div>' +
-      (state.apiActivity.length ? state.apiActivity.slice(-6).reverse().map(function (item) { return '<div class="api-card"><div class="api-info"><strong>' + esc(item.name || item.id || "API") + '</strong><span>' + esc(item.message || item.state || "") + '</span></div></div>'; }).join("") : '<p class="muted-note">No recent API activity to display.</p>') +
-      '</div>';
+      '<div class="section-heading"><div><h2>About Pulse</h2><p>Your library and playback stay on the native Android player.</p></div></div>' +
+      '<div class="panel"><div class="setting-row"><div class="setting-copy"><strong>Online music</strong><span>Searches YouTube directly. Nothing to configure.</span></div>' +
+      '<span class="status-chip ' + (bridge.isNative() ? "ok" : "") + '">' + (bridge.isNative() ? "Connected" : "Preview") + '</span></div>' +
+      '<div class="setting-row"><div class="setting-copy"><strong>Playback</strong><span>Audio, queue, lock-screen and Bluetooth controls are handled by Media3 on Android.</span></div></div></div>';
   }
 
   function renderPage() {
@@ -635,7 +687,6 @@
       case "ready":
         if (payload.settings) updateSettings(payload.settings);
         bridge.send("themeChanged", { resolved: resolvedTheme() });
-        bridge.send("listApis", {});
         bridge.send("restoreQueue", {});
         break;
       case "library":
@@ -646,6 +697,7 @@
         break;
       case "queue":
         if (Array.isArray(payload.uids)) state.queue = payload.uids;
+        if (Array.isArray(payload.items)) state.queueItems = payload.items;
         if (payload.currentUid !== undefined) state.currentUid = payload.currentUid;
         break;
       case "state":
@@ -686,19 +738,27 @@
         break;
       case "searchResults":
         state.searchLoading = false;
+        state.searchIsPlaylist = false;
+        state.searchPlaylistTitle = "";
         state.searchResults = Array.isArray(payload.items) ? payload.items : [];
-        state.searchProvider = payload.provider || "Online sources";
-        state.searchMessage = state.searchResults.length ? "" : "No results found. Check your search phrase, provider settings, API keys, and network connection.";
+        state.searchProvider = payload.provider || "YouTube";
+        state.searchMessage = state.searchResults.length ? "" : "No results found. Try another title or check your internet connection.";
+        break;
+      case "playlistResults":
+        state.searchLoading = false;
+        state.searchIsPlaylist = true;
+        state.searchPlaylistTitle = payload.title || "YouTube playlist";
+        state.searchResults = Array.isArray(payload.items) ? payload.items : [];
+        state.searchProvider = "YouTube";
+        state.searchMessage = "";
+        if (!state.searchResults.length) state.searchMessage = "This playlist has no playable tracks.";
         break;
       case "searchError":
         state.searchLoading = false;
         state.searchResults = [];
-        state.searchMessage = payload.message || "Online search failed.";
-        break;
-      case "apis":
-        state.apis = Array.isArray(payload.apis) ? payload.apis : [];
-        state.apiActivity = Array.isArray(payload.activity) ? payload.activity : state.apiActivity;
-        state.apiScanning = !!payload.scanning;
+        state.searchIsPlaylist = false;
+        state.searchPlaylistTitle = "";
+        state.searchMessage = payload.message || "YouTube search failed.";
         break;
       case "archive":
         state.archive = Array.isArray(payload.items) ? payload.items : [];
@@ -730,43 +790,6 @@
     render();
     bridge.send("setSetting", { key: key, value: value });
     if (key === "theme") bridge.send("themeChanged", { resolved: resolvedTheme() });
-  }
-
-  function addCustomApi() {
-    var nameEl = document.getElementById("custom-api-name");
-    var urlEl = document.getElementById("custom-api-url");
-    var name = nameEl ? nameEl.value.trim() : "";
-    var url = urlEl ? urlEl.value.trim() : "";
-    if (!/^https:\/\//i.test(url)) {
-      showToast("Custom API URLs must use HTTPS.", true);
-      return;
-    }
-    var apis = parseApis();
-    var id = "custom-" + Date.now().toString(36);
-    apis.push({ id: id, name: name || "Custom API", url: url, enabled: true });
-    setSetting("apiEndpoints", JSON.stringify(apis));
-    bridge.send("listApis", {});
-    showToast("Custom API added");
-  }
-
-  function deleteApi(id) {
-    var apis = parseApis().filter(function (api) { return api.id !== id; });
-    setSetting("apiEndpoints", JSON.stringify(apis));
-    bridge.send("listApis", {});
-    showToast("Custom API removed");
-  }
-
-  function toggleApi(id, enabled) {
-    if (id === "youtube") setSetting("apiYoutubeEnabled", enabled);
-    else if (id === "audius") setSetting("apiAudiusEnabled", enabled);
-    else {
-      var apis = parseApis().map(function (api) {
-        if (api.id === id) return Object.assign({}, api, { enabled: enabled });
-        return api;
-      });
-      setSetting("apiEndpoints", JSON.stringify(apis));
-    }
-    bridge.send("listApis", {});
   }
 
   var searchTimer = null;
@@ -803,6 +826,18 @@
       case "repeat": state.repeat = (state.repeat + 1) % 3; render(); bridge.send("setRepeat", { mode: state.repeat }); break;
       case "volume-down": state.volume = Math.max(0, state.volume - 0.1); bridge.send("setVolume", { volume: state.volume }); showToast("Volume " + Math.round(state.volume * 100) + "%"); break;
       case "play-online": if (!Number.isNaN(index)) playOnline(index); break;
+      case "play-playlist":
+        if (state.searchIsPlaylist && state.searchResults.length) {
+          bridge.send("playRemoteQueue", { items: state.searchResults });
+          state.view = "player";
+          render();
+        }
+        break;
+      case "play-queue-item": {
+        var queueIndex = Number(target.getAttribute("data-index"));
+        if (!Number.isNaN(queueIndex)) bridge.send("playQueueIndex", { index: queueIndex });
+        break;
+      }
       case "archive-online": if (!Number.isNaN(index)) archiveOnline(index); break;
       case "archive-track": archiveLocal(uid); break;
       case "play-archived": bridge.send("playArchived", { provider: target.getAttribute("data-provider") || "local", trackId: target.getAttribute("data-track-id") || "" }); setView("player"); break;
@@ -812,22 +847,8 @@
       case "clear-queue": if (window.confirm("Clear the current playback queue?")) bridge.send("clearQueue", {}); break;
       case "clear-local-search": state.localQuery = ""; render(); break;
       case "clear-online-search":
-        state.searchQuery = ""; state.searchResults = []; state.searchMessage = ""; state.searchLoading = false; lastSearchSent = "";
+        state.searchQuery = ""; state.searchResults = []; state.searchMessage = ""; state.searchLoading = false; state.searchIsPlaylist = false; state.searchPlaylistTitle = ""; lastSearchSent = "";
         bridge.send("cancelSearch", {}); render(); break;
-      case "toggle-api-menu": state.apiMenuOpen = !state.apiMenuOpen; render(); break;
-      case "scan-apis": bridge.send("scanApis", {}); break;
-      case "save-api-keys": {
-        var yt = document.getElementById("youtube-key");
-        var au = document.getElementById("audius-key");
-        var saved = false;
-        if (yt && yt.value.trim()) { bridge.send("setSetting", { key: "youtubeApiKey", value: yt.value.trim() }); state.settings.youtubeApiKeySet = true; yt.value = ""; saved = true; }
-        if (au && au.value.trim()) { bridge.send("setSetting", { key: "audiusApiKey", value: au.value.trim() }); state.settings.audiusApiKeySet = true; au.value = ""; saved = true; }
-        if (saved) { render(); bridge.send("listApis", {}); showToast("API key settings submitted"); }
-        else showToast("Enter a key first.", true);
-        break;
-      }
-      case "add-custom-api": addCustomApi(); break;
-      case "delete-api": if (window.confirm("Remove this custom API from Pulse Player?")) deleteApi(target.getAttribute("data-api-id") || ""); break;
       case "sleep-modal": state.showSleepModal = true; render(); break;
       case "close-sleep": state.showSleepModal = false; render(); break;
       case "dismiss-modal": if (event.target === target) { state.showSleepModal = false; render(); } break;
@@ -862,10 +883,6 @@
       setSetting(target.getAttribute("data-setting"), !!target.checked);
       return;
     }
-    if (target.matches("[data-api-toggle]")) {
-      toggleApi(target.getAttribute("data-api-toggle"), !!target.checked);
-      return;
-    }
     if (target.id === "theme-select") {
       setSetting("theme", target.value);
       return;
@@ -887,7 +904,7 @@
   });
 
   if (bridge) {
-    ["ready", "library", "favorites", "queue", "state", "position", "settings", "onlineStatus", "scan", "searchResults", "searchError", "apis", "archive", "reviewQueue", "sleep", "toast", "error", "bridgeUnavailable"].forEach(function (eventName) {
+    ["ready", "library", "favorites", "queue", "state", "position", "settings", "onlineStatus", "scan", "searchResults", "playlistResults", "searchError", "archive", "reviewQueue", "sleep", "toast", "error", "bridgeUnavailable"].forEach(function (eventName) {
       bridge.on(eventName, function (payload) { receive(eventName, payload); });
     });
   }

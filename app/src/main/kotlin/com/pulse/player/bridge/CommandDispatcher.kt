@@ -67,12 +67,6 @@ class CommandDispatcher(
 
     private var scanJob: Job? = null
     private var searchJob: Job? = null
-    private var apiScanJob: Job? = null
-
-    private val API_SETTING_KEYS = setOf(
-        "onlineSearchEnabled", "apiEndpoints", "youtubeApiKey", "audiusApiKey",
-        "apiAudiusEnabled", "apiYoutubeEnabled"
-    )
 
     /* Commands originate in a WebView, so an exception inside a lifecycle
        coroutine must become an error event, not an uncaught exception on the
@@ -147,8 +141,9 @@ class CommandDispatcher(
 
                 BridgeProtocol.CMD_SEARCH_ONLINE -> searchOnline(payload.optString("query"))
                 BridgeProtocol.CMD_CANCEL_SEARCH -> searchJob?.cancel()
-                BridgeProtocol.CMD_LIST_APIS -> publishApis(scanning = false)
-                BridgeProtocol.CMD_SCAN_APIS -> scanApis(payload.optStringOrNull("id"))
+                BridgeProtocol.CMD_LOAD_YOUTUBE_PLAYLIST -> loadYouTubePlaylist(payload.optString("url"))
+                BridgeProtocol.CMD_PLAY_REMOTE_QUEUE -> playRemoteQueue(payload)
+                BridgeProtocol.CMD_PLAY_QUEUE_INDEX -> playQueueIndex(payload.optInt("index", -1))
 
                 BridgeProtocol.CMD_CLEAR_ART_CACHE -> launchSafe { artwork.clear() }
                 BridgeProtocol.CMD_KEEP_AWAKE -> activity.keepScreenAwake(payload.optBoolean("enabled", false))
@@ -268,12 +263,29 @@ class CommandDispatcher(
         try {
             val controller = controllerProvider() ?: return
             val uids = ArrayList<String>(controller.mediaItemCount)
+            val queueRows = JSONArray()
             for (i in 0 until controller.mediaItemCount) {
-                uids.add(controller.getMediaItemAt(i).mediaId)
+                val item = controller.getMediaItemAt(i)
+                uids.add(item.mediaId)
+                val metadata = item.mediaMetadata
+                val extras = metadata.extras
+                queueRows.put(JSONObject().apply {
+                    put("uid", item.mediaId)
+                    put("title", metadata.title?.toString().orEmpty())
+                    put("artist", metadata.artist?.toString().orEmpty())
+                    put("album", metadata.albumTitle?.toString().orEmpty())
+                    put("artworkUrl", extras?.getString("pulse.artworkUrl") ?: JSONObject.NULL)
+                    put("source", extras?.getString("pulse.source") ?: "local")
+                    put("provider", extras?.getString("pulse.provider") ?: JSONObject.NULL)
+                    put("trackId", extras?.getString("pulse.trackId") ?: JSONObject.NULL)
+                    put("durationMs", if (i == controller.currentMediaItemIndex &&
+                        controller.duration != androidx.media3.common.C.TIME_UNSET) controller.duration else 0L)
+                })
             }
             EventBus.emit(
                 BridgeProtocol.EVENT_QUEUE,
                 "uids" to JSONArray(uids),
+                "items" to queueRows,
                 "currentUid" to controller.currentMediaItem?.mediaId
             )
             val current = controller.currentMediaItem
@@ -452,58 +464,114 @@ class CommandDispatcher(
     /** Online catalogue result. YouTube = placeholder URI resolved lazily by Media3; others resolved here. */
     private fun playRemote(payload: JSONObject) {
         val json = payload.optJSONObject("item") ?: return
-        val rawStream = json.optStringOrNull("streamUrl").orEmpty()
-        val id = json.optString("id", rawStream).trim()
-        val provider = json.optString("provider", "audius").ifBlank { "audius" }
-        val art = json.optStringOrNull("artworkUrl")
-        val title = json.optString("title", "Unknown title")
-        val artist = json.optString("artist", "Unknown artist")
-        val album = json.optString("album", "")
-
+        val item = buildRemoteYouTubeItem(json) ?: return
         launchSafe {
-            val uriString: String
-            if (provider.equals("youtube", ignoreCase = true)) {
-                uriString = "pulse-yt://$id"
-            } else {
-                EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Connecting audio stream…")
-                val resolved = withContext(Dispatchers.IO) { search.streamUrl(provider, id) ?: rawStream }
-                if (resolved.isBlank()) {
-                    EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This result cannot be played")
-                    return@launchSafe
-                }
-                if (!resolved.startsWith("https://", ignoreCase = true) &&
-                    !resolved.startsWith("http://", ignoreCase = true)) {
-                    EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Invalid audio stream URL")
-                    return@launchSafe
-                }
-                uriString = resolved
-            }
-
             val controller = controllerProvider() ?: return@launchSafe
-            val item = MediaItem.Builder()
-                .setMediaId("remote:$provider:$id")
-                .setUri(Uri.parse(uriString))
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(title)
-                        .setArtist(artist)
-                        .setAlbumTitle(album)
-                        .setArtworkUri(if (art.isNullOrBlank()) null else Uri.parse(art))
-                        .setIsPlayable(true)
-                        .setExtras(Bundle().apply {
-                            putString("pulse.source", "online")
-                            putString("pulse.provider", provider)
-                            putString("pulse.trackId", id)
-                            putString("pulse.artworkUrl", art)
-                        })
-                        .build()
-                )
-                .build()
-
             controller.setMediaItem(item)
             controller.prepare()
             controller.play()
         }
+    }
+
+    /** Load all playlist rows first; pressing Play playlist then queues them in order. */
+    private fun loadYouTubePlaylist(url: String) {
+        searchJob?.cancel()
+        if (url.isBlank()) return
+        searchJob = launchSafe {
+            try {
+                val playlist = withContext(Dispatchers.IO) { search.loadYouTubePlaylist(url, 1000) }
+                val rows = JSONArray()
+                playlist.tracks.forEach { rows.put(it.toJson()) }
+                EventBus.emit(
+                    BridgeProtocol.EVENT_PLAYLIST_RESULTS,
+                    "items" to rows,
+                    "title" to playlist.title,
+                    "url" to url,
+                    "count" to playlist.tracks.size
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                EventBus.emit(
+                    BridgeProtocol.EVENT_SEARCH_ERROR,
+                    "message" to (t.message ?: "Could not load this YouTube playlist")
+                )
+            }
+        }
+    }
+
+    private fun playQueueIndex(index: Int) {
+        withPlayer { controller ->
+            if (index in 0 until controller.mediaItemCount) {
+                controller.seekTo(index, 0L)
+                controller.play()
+            }
+        }
+    }
+
+    private fun playRemoteQueue(payload: JSONObject) {
+        val rows = payload.optJSONArray("items") ?: return
+        val items = ArrayList<MediaItem>(rows.length())
+        for (index in 0 until rows.length()) {
+            val json = rows.optJSONObject(index) ?: continue
+            buildRemoteYouTubeItem(json)?.let(items::add)
+        }
+        if (items.isEmpty()) {
+            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This playlist contains no playable videos")
+            return
+        }
+        launchSafe {
+            val controller = controllerProvider() ?: return@launchSafe
+            controller.setMediaItems(items, 0, 0L)
+            controller.prepare()
+            controller.play()
+        }
+    }
+
+    private fun buildRemoteYouTubeItem(json: JSONObject): MediaItem? {
+        val provider = json.optString("provider", "youtube").ifBlank { "youtube" }
+        if (!provider.equals("youtube", ignoreCase = true)) {
+            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Online playback currently uses YouTube")
+            return null
+        }
+        val id = normalizeYouTubeId(json.optString("id").ifBlank { json.optString("streamUrl") })
+        if (id.isBlank()) {
+            EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This link does not contain a valid YouTube video")
+            return null
+        }
+        val art = json.optStringOrNull("artworkUrl")
+        return MediaItem.Builder()
+            .setMediaId("remote:youtube:$id")
+            .setUri(Uri.parse("pulse-yt://$id"))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(json.optString("title", "Unknown title"))
+                    .setArtist(json.optString("artist", "YouTube"))
+                    .setAlbumTitle(json.optString("album", "YouTube"))
+                    .setArtworkUri(art?.takeIf { it.startsWith("https://") }?.let(Uri::parse))
+                    .setIsPlayable(true)
+                    .setExtras(Bundle().apply {
+                        putString("pulse.source", "online")
+                        putString("pulse.provider", "youtube")
+                        putString("pulse.trackId", id)
+                        putString("pulse.artworkUrl", art)
+                        putLong("pulse.durationMs", json.optLong("durationMs", 0L).coerceAtLeast(0L))
+                        putBoolean("pulse.autoplayRelated", true)
+                    })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun normalizeYouTubeId(raw: String): String {
+        val value = raw.trim().removePrefix("pulse-yt://")
+        val candidates = listOf(
+            Regex("[?&]v=([A-Za-z0-9_-]{11})").find(value)?.groupValues?.getOrNull(1),
+            Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(value)?.groupValues?.getOrNull(1),
+            Regex("/(?:shorts|embed|live)/([A-Za-z0-9_-]{11})").find(value)?.groupValues?.getOrNull(1),
+            value.takeIf { Regex("^[A-Za-z0-9_-]{11}$").matches(it) }
+        )
+        return candidates.firstOrNull { !it.isNullOrBlank() }.orEmpty()
     }
 
     private fun playArchived(payload: JSONObject) {
@@ -737,63 +805,23 @@ class CommandDispatcher(
                 is Number -> settings.setString(key, value.toString())
                 else -> Unit
             }
-            when (key) {
-                "onlineSearchEnabled" -> search.setEnabled(value == true)
-                "apiEndpoints" -> search.setUserApis(value as? String)
-                "youtubeApiKey" -> search.setYouTubeApiKey(value as? String)
-                "audiusApiKey" -> search.setAudiusApiKey(value as? String)
-                "apiAudiusEnabled" -> search.setProviderEnabled("audius", value == true)
-                "apiYoutubeEnabled" -> search.setProviderEnabled("youtube", value == true)
-                "hideShortClips", "localSearchEnabled" -> Unit
-            }
-            val settingsMap = settings.current()
-            EventBus.emit(BridgeProtocol.EVENT_SETTINGS, settingsJson(settingsMap))
-            if (key in API_SETTING_KEYS) publishApis(scanning = false)
+            if (key == "onlineSearchEnabled") search.setEnabled(value == true)
+            EventBus.emit(BridgeProtocol.EVENT_SETTINGS, settingsJson(settings.current()))
         }
     }
-
-    /* ═══════════════════════════ API manager ═══════════════════════════ */
 
     private fun applySearchSettings(map: Map<String, Any?>) {
-        search.setEnabled(map["onlineSearchEnabled"] as? Boolean == true)
-        search.setUserApis(map["apiEndpoints"] as? String)
-        search.setYouTubeApiKey(map["youtubeApiKey"] as? String)
-        search.setAudiusApiKey(map["audiusApiKey"] as? String)
-        search.setProviderEnabled("audius", map["apiAudiusEnabled"] as? Boolean != false)
-        search.setProviderEnabled("youtube", map["apiYoutubeEnabled"] as? Boolean != false)
+        search.setEnabled(map["onlineSearchEnabled"] as? Boolean != false)
     }
 
-    /** Settings sent to the page. API keys stay native; the page only learns whether one is set. */
+    /** Legacy API keys/endpoints are omitted from the UI and no longer used. */
     private fun settingsJson(map: Map<String, Any?>): JSONObject = JSONObject().apply {
-        map.forEach { (k, v) ->
-            if (k == "youtubeApiKey" || k == "audiusApiKey") {
-                put(k + "Set", !(v as? String).isNullOrBlank())
-            } else {
-                put(k, v ?: JSONObject.NULL)
-            }
-        }
-    }
-
-    private fun publishApis(scanning: Boolean) {
-        EventBus.emit(
-            BridgeProtocol.EVENT_APIS,
-            "apis" to search.describeApis(),
-            "activity" to search.activityJson(),
-            "scanning" to scanning,
-            "at" to System.currentTimeMillis()
+        val retired = setOf(
+            "apiEndpoints", "youtubeApiKey", "audiusApiKey",
+            "apiAudiusEnabled", "apiYoutubeEnabled"
         )
-    }
-
-    /** Health-checks every API (or one) without ever blocking the UI. */
-    private fun scanApis(onlyId: String?) {
-        apiScanJob?.cancel()
-        publishApis(scanning = true)
-        apiScanJob = launchSafe {
-            try {
-                search.scan(onlyId)
-            } finally {
-                publishApis(scanning = false)
-            }
+        map.forEach { (key, value) ->
+            if (key !in retired) put(key, value ?: JSONObject.NULL)
         }
     }
 
