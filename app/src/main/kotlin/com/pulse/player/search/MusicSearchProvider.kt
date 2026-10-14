@@ -67,7 +67,7 @@ class MusicSearchRepository(private val contextProvider: () -> android.content.C
 
     suspend fun loadYouTubePlaylist(
         url: String,
-        limit: Int = 1000,
+        limit: Int = 150,
         onProgress: ((YouTubePlaylist, Boolean) -> Unit)? = null
     ): YouTubePlaylist = youtube.loadPlaylist(url, limit, onProgress)
 
