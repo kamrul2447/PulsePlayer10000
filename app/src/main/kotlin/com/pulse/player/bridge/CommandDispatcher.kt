@@ -684,7 +684,7 @@ class CommandDispatcher(
         val source = payload.optString("source", "local")
         launchSafe {
             if (source == "online") {
-                val provider = payload.optString("provider", "audius").ifBlank { "audius" }
+                val provider = payload.optString("provider", "youtube").ifBlank { "youtube" }
                 val id = payload.optString("trackId").trim()
                 if (id.isBlank()) return@launchSafe
                 library.archiveOnline(
