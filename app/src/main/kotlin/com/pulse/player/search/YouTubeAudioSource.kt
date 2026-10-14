@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -24,7 +23,11 @@ const val YOUTUBE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleW
 interface YouTubeAudioSource {
     suspend fun search(query: String, limit: Int): List<TrackSearchResult>
     suspend fun resolveAudioUrl(videoId: String): String?
-    suspend fun loadPlaylist(url: String, limit: Int = 1000): YouTubePlaylist
+    suspend fun loadPlaylist(
+        url: String,
+        limit: Int = 1000,
+        onProgress: ((YouTubePlaylist, Boolean) -> Unit)? = null
+    ): YouTubePlaylist
     suspend fun related(videoId: String, limit: Int = 15): List<TrackSearchResult>
 }
 
@@ -102,7 +105,11 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
             .take(limit.coerceIn(1, 50))
     }
 
-    override suspend fun loadPlaylist(url: String, limit: Int): YouTubePlaylist = withContext(Dispatchers.IO) {
+    override suspend fun loadPlaylist(
+        url: String,
+        limit: Int,
+        onProgress: ((YouTubePlaylist, Boolean) -> Unit)?
+    ): YouTubePlaylist = withContext(Dispatchers.IO) {
         init()
         val normalizedUrl = normalizePlaylistUrl(url)
         val extractor = try {
@@ -122,18 +129,34 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
         val result = ArrayList<TrackSearchResult>()
         val seen = HashSet<String>()
         var page = extractor.initialPage
+            ?: throw ProviderException("YouTube returned no playlist page.", "empty_playlist")
+        var pagesRead = 0
 
         while (result.size < maximum) {
             page.items.orEmpty().filterIsInstance<StreamInfoItem>().forEach { item ->
+                if (result.size >= maximum) return@forEach
                 val track = toResult(item) ?: return@forEach
                 if (seen.add(track.id)) result.add(track)
             }
-            if (result.size >= maximum) break
-            val nextPage: Page = page.nextPage ?: break
+            pagesRead++
+
+            val nextPage = page.nextPage
+            val complete = result.size >= maximum || nextPage == null
+            // Show the first page immediately, then batch updates to avoid
+            // repeatedly serializing the whole playlist after every tiny page.
+            if (result.isNotEmpty() && (pagesRead == 1 || pagesRead % 3 == 0 || complete)) {
+                onProgress?.invoke(YouTubePlaylist(title, result.toList()), complete)
+            }
+            if (complete) break
+
             page = try {
-                extractor.getPage(nextPage)
+                extractor.getPage(nextPage!!)
             } catch (t: Throwable) {
-                if (result.isNotEmpty()) break
+                if (result.isNotEmpty()) {
+                    // Keep already collected tracks usable if a later page fails.
+                    onProgress?.invoke(YouTubePlaylist(title, result.toList()), true)
+                    break
+                }
                 throw ProviderException("YouTube could not read this playlist: " + explain(t), "playlist_error")
             }
         }

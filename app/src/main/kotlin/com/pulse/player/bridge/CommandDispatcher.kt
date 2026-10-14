@@ -143,6 +143,7 @@ class CommandDispatcher(
                 BridgeProtocol.CMD_CANCEL_SEARCH -> searchJob?.cancel()
                 BridgeProtocol.CMD_LOAD_YOUTUBE_PLAYLIST -> loadYouTubePlaylist(payload.optString("url"))
                 BridgeProtocol.CMD_PLAY_REMOTE_QUEUE -> playRemoteQueue(payload)
+                BridgeProtocol.CMD_APPEND_REMOTE_QUEUE -> appendRemoteQueue(payload)
                 BridgeProtocol.CMD_PLAY_QUEUE_INDEX -> playQueueIndex(payload.optInt("index", -1))
 
                 BridgeProtocol.CMD_CLEAR_ART_CACHE -> launchSafe { artwork.clear() }
@@ -473,22 +474,24 @@ class CommandDispatcher(
         }
     }
 
-    /** Load all playlist rows first; pressing Play playlist then queues them in order. */
+    /** Publish playlist progress while later YouTube pages are still loading. */
     private fun loadYouTubePlaylist(url: String) {
         searchJob?.cancel()
         if (url.isBlank()) return
         searchJob = launchSafe {
             try {
-                val playlist = withContext(Dispatchers.IO) { search.loadYouTubePlaylist(url, 1000) }
-                val rows = JSONArray()
-                playlist.tracks.forEach { rows.put(it.toJson()) }
-                EventBus.emit(
-                    BridgeProtocol.EVENT_PLAYLIST_RESULTS,
-                    "items" to rows,
-                    "title" to playlist.title,
-                    "url" to url,
-                    "count" to playlist.tracks.size
-                )
+                search.loadYouTubePlaylist(url, 1000) { progress, complete ->
+                    val rows = JSONArray()
+                    progress.tracks.forEach { rows.put(it.toJson()) }
+                    EventBus.emit(
+                        BridgeProtocol.EVENT_PLAYLIST_RESULTS,
+                        "items" to rows,
+                        "title" to progress.title,
+                        "url" to url,
+                        "count" to progress.tracks.size,
+                        "complete" to complete
+                    )
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (t: Throwable) {
@@ -514,7 +517,9 @@ class CommandDispatcher(
         val items = ArrayList<MediaItem>(rows.length())
         for (index in 0 until rows.length()) {
             val json = rows.optJSONObject(index) ?: continue
-            buildRemoteYouTubeItem(json)?.let(items::add)
+            // Playlist songs should keep their chosen order without related-video
+            // suggestions being inserted between tracks.
+            buildRemoteYouTubeItem(json, autoplayRelated = false)?.let(items::add)
         }
         if (items.isEmpty()) {
             EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "This playlist contains no playable videos")
@@ -528,7 +533,33 @@ class CommandDispatcher(
         }
     }
 
-    private fun buildRemoteYouTubeItem(json: JSONObject): MediaItem? {
+    /** Append newly fetched playlist pages while the first tracks are already playing. */
+    private fun appendRemoteQueue(payload: JSONObject) {
+        val rows = payload.optJSONArray("items") ?: return
+        val items = ArrayList<MediaItem>(rows.length())
+        for (index in 0 until rows.length()) {
+            val json = rows.optJSONObject(index) ?: continue
+            buildRemoteYouTubeItem(json, autoplayRelated = false)?.let(items::add)
+        }
+        if (items.isEmpty()) return
+
+        withPlayer { controller ->
+            val resumeAtNewItems = controller.mediaItemCount.takeIf {
+                controller.playbackState == Player.STATE_ENDED
+            }
+            controller.addMediaItems(items)
+            if (resumeAtNewItems != null) {
+                controller.seekTo(resumeAtNewItems, 0L)
+                controller.prepare()
+                controller.play()
+            }
+        }
+    }
+
+    private fun buildRemoteYouTubeItem(
+        json: JSONObject,
+        autoplayRelated: Boolean = true
+    ): MediaItem? {
         val provider = json.optString("provider", "youtube").ifBlank { "youtube" }
         if (!provider.equals("youtube", ignoreCase = true)) {
             EventBus.emit(BridgeProtocol.EVENT_TOAST, "message" to "Online playback currently uses YouTube")
@@ -556,7 +587,7 @@ class CommandDispatcher(
                         putString("pulse.trackId", id)
                         putString("pulse.artworkUrl", art)
                         putLong("pulse.durationMs", json.optLong("durationMs", 0L).coerceAtLeast(0L))
-                        putBoolean("pulse.autoplayRelated", true)
+                        putBoolean("pulse.autoplayRelated", autoplayRelated)
                     })
                     .build()
             )

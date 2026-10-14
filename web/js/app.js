@@ -39,6 +39,8 @@
     searchLoading: false,
     searchIsPlaylist: false,
     searchPlaylistTitle: "",
+    playlistPlaybackActive: false,
+    playlistQueuedCount: 0,
     archive: [],
     reviewQueue: [],
     menuTrackUid: null,
@@ -274,6 +276,8 @@
     state.searchLoading = false;
     state.searchIsPlaylist = false;
     state.searchPlaylistTitle = "";
+    state.playlistPlaybackActive = false;
+    state.playlistQueuedCount = 0;
     if (!query) {
       bridge.send("cancelSearch", {});
       state.searchProvider = "";
@@ -287,6 +291,9 @@
     if (playlistUrl) {
       state.searchLoading = true;
       state.searchIsPlaylist = true;
+      state.searchResults = [];
+      state.searchMessage = "";
+      state.searchPlaylistTitle = "Loading playlist…";
       render();
       bridge.send("loadYouTubePlaylist", { url: playlistUrl });
       return;
@@ -389,21 +396,26 @@
     var recent = state.tracks.slice(0, 5);
     var count = state.tracks.length;
     var current = state.current;
-    var heroTitle = current && current.title ? "Pick up where you left off." : "Your music, ready to play.";
-    var heroText = current && current.title ? "Continue listening, or choose something else." : "Your songs on this phone, plus music you find online.";
-    return '<section class="hero"><div class="hero-copy"><div class="hero-badge">' + icon("zap", 14) + ' Your music</div><h2>' + heroTitle + '</h2><p>' + heroText + '</p><div class="hero-actions">' +
-      (current && current.title ? '<button class="button primary" data-action="view" data-view="player">' + icon("play", 16) + ' Return to player</button>' : '<button class="button primary" data-action="view" data-view="library">' + icon("library", 16) + ' Open library</button>') +
-      '<button class="button ghost" data-action="view" data-view="search">' + icon("globe", 16) + ' Discover online</button></div></div>' +
-      '<div class="hero-art"><div class="hero-orbit"></div><div class="hero-disc"><div class="hero-wave"></div><div class="hero-wave wave-two"></div><div class="hero-wave wave-three"></div></div></div></section>' +
-      '<div class="section-heading"><div><h2>Your music</h2><p>Open your library, continue listening, or find something new.</p></div></div>' +
+    var heroTitle = current && current.title ? "Pick up where you left off." : "Your music, without the clutter.";
+    var heroText = current && current.title
+      ? "Your queue is ready whenever you are."
+      : "A focused home for the songs on your device and the music you discover.";
+    var feature = current && current.title
+      ? '<button type="button" class="home-feature" data-action="view" data-view="player"><div class="home-feature-cover">' + coverMarkup(current, 320) + '</div><div class="home-feature-copy"><span class="home-feature-label">NOW PLAYING</span><strong>' + esc(current.title) + '</strong><span>' + esc(current.artist || "Unknown artist") + '</span><span class="home-feature-open">' + icon("play", 13) + ' Open player</span></div></button>'
+      : '<div class="home-stats"><div><span>LOCAL TRACKS</span><strong>' + fmtCount(count) + '</strong></div><div><span>FAVORITES</span><strong>' + fmtCount(state.favorites.size) + '</strong></div><div><span>IN QUEUE</span><strong>' + fmtCount(state.queue.length) + '</strong></div></div>';
+
+    return '<section class="hero home-hero"><div class="hero-copy"><div class="hero-badge">' + icon("headphones", 14) + ' PULSE PLAYER</div><h2>' + heroTitle + '</h2><p>' + heroText + '</p><div class="hero-actions">' +
+      (current && current.title ? '<button class="button primary" data-action="view" data-view="player">' + icon("play", 16) + ' Continue listening</button>' : '<button class="button primary" data-action="view" data-view="library">' + icon("library", 16) + ' Open library</button>') +
+      '<button class="button ghost" data-action="view" data-view="search">' + icon("search", 16) + ' Discover music</button></div></div>' +
+      feature + '</section>' +
+      '<div class="section-heading"><div><h2>Your collection</h2><p>Quick access to the music you return to.</p></div></div>' +
       '<div class="quick-grid">' +
-      '<button class="quick-card" data-action="view" data-view="library"><span class="quick-icon">' + icon("library", 20) + '</span><div><strong>Local library</strong><span>' + fmtCount(count) + ' songs on this device</span></div></button>' +
+      '<button class="quick-card" data-action="view" data-view="library"><span class="quick-icon">' + icon("library", 20) + '</span><div><strong>Library</strong><span>' + fmtCount(count) + ' local tracks</span></div></button>' +
       '<button class="quick-card" data-action="view" data-view="favorites"><span class="quick-icon">' + icon("heart", 20) + '</span><div><strong>Favorites</strong><span>' + fmtCount(state.favorites.size) + ' saved tracks</span></div></button>' +
-      '<button class="quick-card" data-action="view" data-view="queue"><span class="quick-icon">' + icon("queue", 20) + '</span><div><strong>Play queue</strong><span>' + fmtCount(state.queue.length) + ' tracks in the queue</span></div></button>' +
-      '</div><div class="section-heading"><div><h2>On your device</h2><p>' + (count ? "Your recently available local tracks." : "Scan to make your music appear here.") + '</p></div><button class="button ghost" data-action="view" data-view="library">View all ' + icon("chevron", 15) + '</button></div>' +
+      '<button class="quick-card" data-action="view" data-view="queue"><span class="quick-icon">' + icon("queue", 20) + '</span><div><strong>Play queue</strong><span>' + fmtCount(state.queue.length) + ' tracks ready</span></div></button>' +
+      '</div><div class="section-heading"><div><h2>Recently available</h2><p>' + (count ? "Tracks ready to play on this device." : "Scan your device to build your library.") + '</p></div><button class="button ghost" data-action="view" data-view="library">View library ' + icon("chevron", 15) + '</button></div>' +
       (recent.length ? renderTrackList(recent) : renderTrackList([])) +
-      '<div class="section-heading"><div><h2>Playback</h2><p>Simple controls, without getting in your way.</p></div></div>' +
-      '<div class="panel"><div class="setting-row"><div class="setting-copy"><strong>Online search</strong><span>Search YouTube when you are connected to the internet.</span></div><button class="button ghost" data-action="view" data-view="search">Search songs ' + icon("chevron", 14) + '</button></div></div>';
+      '<div class="section-heading"><div><h2>Online discovery</h2><p>Search YouTube without leaving the player.</p></div><button class="button ghost" data-action="view" data-view="search">' + icon("search", 15) + ' Search music</button></div>';
   }
 
   function renderLibrary() {
@@ -458,8 +470,11 @@
           : '<button class="button primary" data-action="view" data-view="settings">' + icon("settings", 15) + ' Settings</button>') +
         '</div>';
     }
-    if (state.searchLoading) return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("refresh", 24) +
-      '</div><h3>' + (state.searchIsPlaylist ? "Loading playlist…" : "Searching YouTube…") + '</h3><p>Getting the track list. Large playlists can take a little longer.</p></div>';
+    if (state.searchLoading && !(state.searchIsPlaylist && state.searchResults.length)) {
+      return searchInput + '<div class="empty-state"><div class="empty-orb">' + icon("refresh", 24) +
+        '</div><h3>' + (state.searchIsPlaylist ? "Opening playlist…" : "Searching YouTube…") + '</h3><p>' +
+        (state.searchIsPlaylist ? "Connecting to YouTube and collecting the first tracks." : "Finding matching tracks.") + '</p></div>';
+    }
 
     if (state.searchMessage) {
       return searchInput + '<div class="empty-state"><div class="empty-orb">' +
@@ -479,11 +494,15 @@
       grouped[key].push({ item: item, index: index });
     });
     if (state.searchIsPlaylist) {
-      return searchInput + '<div class="section-heading"><div><h2>' +
-        esc(state.searchPlaylistTitle || "YouTube playlist") + '</h2><p>' +
-        fmtCount(state.searchResults.length) + ' tracks</p></div>' +
-        '<button class="button primary" data-action="play-playlist">' + icon("play", 15) +
-        ' Play playlist</button></div><div class="track-list">' +
+      var playlistStatus = state.searchLoading
+        ? '<p class="playlist-status"><span class="loading-indicator"></span>' + fmtCount(state.searchResults.length) + ' tracks loaded · collecting the rest from YouTube</p>'
+        : '<p>' + fmtCount(state.searchResults.length) + ' tracks</p>';
+      return searchInput + '<div class="section-heading playlist-heading"><div><h2>' +
+        esc(state.searchPlaylistTitle || "YouTube playlist") + '</h2>' + playlistStatus + '</div>' +
+        '<button class="button primary" data-action="play-playlist" title="' +
+        (state.searchLoading ? 'Play loaded tracks while the rest are collected' : 'Play all playlist tracks') + '">' +
+        icon("play", 15) + (state.searchLoading ? ' Play loaded tracks' : ' Play playlist') +
+        '</button></div><div class="track-list">' +
         state.searchResults.map(renderPlaylistTrackRow).join("") + '</div>';
     }
 
@@ -683,6 +702,7 @@
 
   function receive(type, payload) {
     payload = payload || {};
+    var renderNeeded = true;
     switch (type) {
       case "ready":
         if (payload.settings) updateSettings(payload.settings);
@@ -701,13 +721,25 @@
         if (payload.currentUid !== undefined) state.currentUid = payload.currentUid;
         break;
       case "state":
-      case "position":
+      case "position": {
+        var previousTrack = state.current;
+        var previousTrackKey = previousTrack ? String(previousTrack.uid || previousTrack.trackId || "") : "";
+        var previousPlaying = state.playing;
+        var previousShuffle = state.shuffle;
+        var previousRepeat = state.repeat;
+        var previousBuffering = state.buffering;
+        var previousVolume = state.volume;
+
         if (payload.uid !== undefined || payload.title !== undefined || payload.source !== undefined) {
           if (payload.uid || payload.title) {
             var matched = state.tracks.find(function (track) { return track.uid === payload.uid; });
-            state.current = Object.assign({}, matched || {}, state.current || {}, payload);
-            state.current.uid = payload.uid || (matched && matched.uid) || null;
-            state.current.source = payload.source || (matched ? "local" : (state.current.source || "local"));
+            var nextUid = payload.uid || (matched && matched.uid) || null;
+            var sameTrack = !!previousTrack && !!nextUid &&
+              String(previousTrack.uid || previousTrack.trackId || "") === String(nextUid);
+            // A local artKey must not survive when a different online track starts.
+            state.current = Object.assign({}, matched || {}, sameTrack ? previousTrack : {}, payload);
+            state.current.uid = nextUid;
+            state.current.source = payload.source || (matched ? "local" : (sameTrack ? previousTrack.source : "local"));
           } else if (type === "state") {
             state.current = null;
           }
@@ -722,7 +754,26 @@
         if (payload.shuffle !== undefined) state.shuffle = !!payload.shuffle;
         if (payload.repeat !== undefined) state.repeat = Number(payload.repeat) || 0;
         if (payload.error) showToast(payload.error.message || "Playback error", true);
+
+        var nextTrackKey = state.current ? String(state.current.uid || state.current.trackId || "") : "";
+        var identityChanged = previousTrackKey !== nextTrackKey;
+        var metadataChanged = (!previousTrack && !!state.current) || (!!previousTrack && !state.current);
+        if (previousTrack && state.current && previousTrackKey === nextTrackKey) {
+          metadataChanged = previousTrack.title !== state.current.title ||
+            previousTrack.artist !== state.current.artist ||
+            previousTrack.album !== state.current.album ||
+            previousTrack.artKey !== state.current.artKey ||
+            previousTrack.artworkUrl !== state.current.artworkUrl ||
+            previousTrack.source !== state.current.source;
+        }
+        renderNeeded = identityChanged || metadataChanged ||
+          previousPlaying !== state.playing ||
+          previousShuffle !== state.shuffle ||
+          previousRepeat !== state.repeat ||
+          previousBuffering !== state.buffering ||
+          previousVolume !== state.volume;
         break;
+      }
       case "settings":
         updateSettings(payload);
         break;
@@ -744,15 +795,23 @@
         state.searchProvider = payload.provider || "YouTube";
         state.searchMessage = state.searchResults.length ? "" : "No results found. Try another title or check your internet connection.";
         break;
-      case "playlistResults":
-        state.searchLoading = false;
+      case "playlistResults": {
+        var incomingPlaylistItems = Array.isArray(payload.items) ? payload.items : [];
+        if (state.playlistPlaybackActive && incomingPlaylistItems.length > state.playlistQueuedCount) {
+          bridge.send("appendRemoteQueue", {
+            items: incomingPlaylistItems.slice(state.playlistQueuedCount)
+          });
+          state.playlistQueuedCount = incomingPlaylistItems.length;
+        }
+        state.searchLoading = payload.complete === false;
         state.searchIsPlaylist = true;
         state.searchPlaylistTitle = payload.title || "YouTube playlist";
-        state.searchResults = Array.isArray(payload.items) ? payload.items : [];
+        state.searchResults = incomingPlaylistItems;
         state.searchProvider = "YouTube";
         state.searchMessage = "";
-        if (!state.searchResults.length) state.searchMessage = "This playlist has no playable tracks.";
+        if (!state.searchResults.length && !state.searchLoading) state.searchMessage = "This playlist has no playable tracks.";
         break;
+      }
       case "searchError":
         state.searchLoading = false;
         state.searchResults = [];
@@ -781,7 +840,8 @@
       default:
         break;
     }
-    render();
+    if (renderNeeded) render();
+    else updateProgressUi();
   }
 
   function setSetting(key, value) {
@@ -803,8 +863,9 @@
     switch (action) {
       case "view": setView(target.getAttribute("data-view")); break;
       case "scan": state.notifyScanFinish = true; bridge.send("scanLibrary", { full: true }); break;
-      case "play-local": playLocal(uid); break;
+      case "play-local": state.playlistPlaybackActive = false; playLocal(uid); break;
       case "play-all": {
+        state.playlistPlaybackActive = false;
         var tracks = allVisibleTracks();
         if (tracks.length) bridge.send("playTracks", { uids: tracks.map(function (track) { return track.uid; }), index: 0 });
         state.view = "player"; render(); break;
@@ -825,9 +886,14 @@
       case "shuffle": state.shuffle = !state.shuffle; render(); bridge.send("setShuffle", { enabled: state.shuffle }); break;
       case "repeat": state.repeat = (state.repeat + 1) % 3; render(); bridge.send("setRepeat", { mode: state.repeat }); break;
       case "volume-down": state.volume = Math.max(0, state.volume - 0.1); bridge.send("setVolume", { volume: state.volume }); showToast("Volume " + Math.round(state.volume * 100) + "%"); break;
-      case "play-online": if (!Number.isNaN(index)) playOnline(index); break;
+      case "play-online":
+        state.playlistPlaybackActive = false;
+        if (!Number.isNaN(index)) playOnline(index);
+        break;
       case "play-playlist":
         if (state.searchIsPlaylist && state.searchResults.length) {
+          state.playlistPlaybackActive = state.searchLoading;
+          state.playlistQueuedCount = state.searchResults.length;
           bridge.send("playRemoteQueue", { items: state.searchResults });
           state.view = "player";
           render();
@@ -844,7 +910,13 @@
       case "restore-archive": bridge.send("restoreTrack", { provider: target.getAttribute("data-provider") || "local", trackId: target.getAttribute("data-track-id") || "" }); break;
       case "approve-review": bridge.send("approveReview", { uid: uid }); break;
       case "reject-review": bridge.send("rejectReview", { uid: uid }); break;
-      case "clear-queue": if (window.confirm("Clear the current playback queue?")) bridge.send("clearQueue", {}); break;
+      case "clear-queue":
+        if (window.confirm("Clear the current playback queue?")) {
+          state.playlistPlaybackActive = false;
+          state.playlistQueuedCount = 0;
+          bridge.send("clearQueue", {});
+        }
+        break;
       case "clear-local-search": state.localQuery = ""; render(); break;
       case "clear-online-search":
         state.searchQuery = ""; state.searchResults = []; state.searchMessage = ""; state.searchLoading = false; state.searchIsPlaylist = false; state.searchPlaylistTitle = ""; lastSearchSent = "";
