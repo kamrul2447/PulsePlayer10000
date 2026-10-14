@@ -132,17 +132,23 @@ android {
 // `web/` is the single source of truth for the UI. This task copies it into the
 // APK assets before every build, so you never edit a duplicated copy.
 // Release builds can drop the browser-only mock engine with -PpulseWebMock=false.
-val webDir: File = rootProject.file("../web")
+val webDir: File = rootProject.file("web")
 val includeWebMock: Boolean = (project.findProperty("pulseWebMock") as String?) != "false"
 
 val syncWebAssets by tasks.registering(Sync::class) {
-    description = "Copies the Pulse Player web frontend into the app assets when the optional ../web checkout exists."
+    description = "Copies the version-controlled Pulse Player web frontend into the app assets."
     group = "pulse"
-    if (webDir.exists()) {
-        from(webDir) {
-            if (!includeWebMock) exclude("js/mock/**")
-            exclude(".*")
+    doFirst {
+        check(webDir.isDirectory) {
+            "Pulse Player web source is missing at ${webDir.absolutePath}. Restore the repository web/ directory before building."
         }
+        check(webDir.resolve("index.html").isFile && webDir.resolve("js/core/bridge.js").isFile) {
+            "Pulse Player web source is incomplete. Expected web/index.html and web/js/core/bridge.js."
+        }
+    }
+    from(webDir) {
+        if (!includeWebMock) exclude("js/mock/**")
+        exclude(".*")
     }
     into(layout.projectDirectory.dir("src/main/assets/web"))
 }
