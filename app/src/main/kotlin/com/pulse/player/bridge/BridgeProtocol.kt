@@ -82,6 +82,7 @@ object BridgeProtocol {
     const val CMD_CANCEL_SEARCH = "cancelSearch"
     const val CMD_LOAD_YOUTUBE_PLAYLIST = "loadYouTubePlaylist"
     const val CMD_PLAY_REMOTE_QUEUE = "playRemoteQueue"
+    const val CMD_APPEND_REMOTE_QUEUE = "appendRemoteQueue"
     const val CMD_PLAY_QUEUE_INDEX = "playQueueIndex"
 
     const val CMD_CLEAR_ART_CACHE = "clearArtCache"

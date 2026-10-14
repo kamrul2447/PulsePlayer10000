@@ -65,8 +65,11 @@ class MusicSearchRepository(private val contextProvider: () -> android.content.C
         return youtube.streamUrl(trackId)
     }
 
-    suspend fun loadYouTubePlaylist(url: String, limit: Int = 1000): YouTubePlaylist =
-        youtube.loadPlaylist(url, limit)
+    suspend fun loadYouTubePlaylist(
+        url: String,
+        limit: Int = 1000,
+        onProgress: ((YouTubePlaylist, Boolean) -> Unit)? = null
+    ): YouTubePlaylist = youtube.loadPlaylist(url, limit, onProgress)
 
     suspend fun relatedYouTube(videoId: String, limit: Int = 15): List<TrackSearchResult> =
         youtube.related(videoId, limit)

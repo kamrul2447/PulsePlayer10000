@@ -25,7 +25,11 @@ class YouTubeMusicProvider {
     }
 
     suspend fun streamUrl(trackId: String): String? = source.resolveAudioUrl(trackId)
-    suspend fun loadPlaylist(url: String, limit: Int): YouTubePlaylist = source.loadPlaylist(url, limit)
+    suspend fun loadPlaylist(
+        url: String,
+        limit: Int,
+        onProgress: ((YouTubePlaylist, Boolean) -> Unit)? = null
+    ): YouTubePlaylist = source.loadPlaylist(url, limit, onProgress)
     suspend fun related(videoId: String, limit: Int): List<TrackSearchResult> = source.related(videoId, limit)
 
     companion object {
