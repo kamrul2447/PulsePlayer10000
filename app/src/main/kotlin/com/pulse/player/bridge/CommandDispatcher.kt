@@ -480,7 +480,7 @@ class CommandDispatcher(
         if (url.isBlank()) return
         searchJob = launchSafe {
             try {
-                search.loadYouTubePlaylist(url, 1000) { progress, complete ->
+                search.loadYouTubePlaylist(url, 150) { progress, complete ->
                     val rows = JSONArray()
                     progress.tracks.forEach { rows.put(it.toJson()) }
                     EventBus.emit(
