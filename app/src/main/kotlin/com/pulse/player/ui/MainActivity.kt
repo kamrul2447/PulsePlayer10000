@@ -51,8 +51,6 @@ import com.pulse.player.bridge.BridgeProtocol
 import com.pulse.player.bridge.CommandDispatcher
 import com.pulse.player.bridge.JsBridge
 import com.pulse.player.di.ServiceLocator
-import com.pulse.player.search.AudiusMusicProvider
-import com.pulse.player.search.YouTubeMusicProvider
 import com.pulse.player.player.PulsePlaybackService
 import com.pulse.player.util.EventBus
 import com.pulse.player.util.isNetworkAvailable
@@ -166,7 +164,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         ServiceLocator.init(this)
-        ServiceLocator.search(this).use(listOf(AudiusMusicProvider(), YouTubeMusicProvider()))
 
         webView = WebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(

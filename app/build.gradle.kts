@@ -38,21 +38,7 @@ android {
         // Expose build values to the UI layer (shown on the Settings screen).
         buildConfigField("String", "PULSE_VERSION", "\"$versionName\"")
         buildConfigField("boolean", "PULSE_ADS_ENABLED", "${project.findProperty("pulseAdsEnabled") ?: "false"}")
-        // Public Audius client API key only. Never place the Audius Bearer Token in this app.
-        val audiusApiKey = (project.findProperty("audiusApiKey") as String?)
-            ?.trim()
-            .orEmpty()
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        buildConfigField("String", "AUDIUS_API_KEY", "\"$audiusApiKey\"")
 
-        // Optional YouTube Data API v3 key for YouTube catalogue search.
-        val youtubeApiKey = (project.findProperty("youtubeApiKey") as String?)
-            ?.trim()
-            .orEmpty()
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        buildConfigField("String", "YOUTUBE_API_KEY", "\"$youtubeApiKey\"")
     }
 
     signingConfigs {

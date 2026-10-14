@@ -25,6 +25,8 @@ import com.pulse.player.bridge.FavoritesPublisher
 import com.pulse.player.data.LibraryRepository
 import com.pulse.player.data.SettingsRepository
 import com.pulse.player.di.ServiceLocator
+import com.pulse.player.search.NewPipeYouTubeAudioSource
+import com.pulse.player.search.TrackSearchResult
 import com.pulse.player.ui.MainActivity
 import com.pulse.player.util.EventBus
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -36,6 +38,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
@@ -82,6 +85,9 @@ class PulsePlaybackService : MediaSessionService() {
     private var positionJob: kotlinx.coroutines.Job? = null
     private var consecutiveErrors = 0
     private var ytRetried = false
+    private var relatedJob: kotlinx.coroutines.Job? = null
+    private var relatedRequestFor: String? = null
+    private val queuedRelatedIds = LinkedHashSet<String>()
 
     /* ═══════════════════════════ lifecycle ═══════════════════════════ */
 
@@ -268,6 +274,7 @@ class PulsePlaybackService : MediaSessionService() {
             runCatching { savePlaybackState() }
             runCatching { publishState() }
             runCatching { publishQueue() }
+            maybeAppendRelated(mediaItem)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -342,6 +349,109 @@ class PulsePlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * When an online YouTube track is the last queued item, quietly append YouTube's
+     * related results. This keeps a single searched song from ending in silence,
+     * while an imported playlist still plays in its original order first.
+     */
+    private fun maybeAppendRelated(currentItem: MediaItem?) {
+        currentItem ?: return
+        val extras = currentItem.mediaMetadata.extras ?: return
+        if (!extras.getBoolean("pulse.autoplayRelated", false)) return
+        if (!extras.getString("pulse.provider").equals("youtube", ignoreCase = true)) return
+        if (player.repeatMode == Player.REPEAT_MODE_ONE || player.hasNextMediaItem()) return
+
+        val videoId = extras.getString("pulse.trackId")?.trim().orEmpty()
+        if (!videoId.matches(Regex("[A-Za-z0-9_-]{11}"))) return
+        if (relatedRequestFor == videoId) return
+
+        relatedRequestFor = videoId
+        relatedJob?.cancel()
+        relatedJob = serviceScope.launch {
+            try {
+                val wasPlaying = player.playWhenReady
+                val suggestions = withContext(Dispatchers.IO) {
+                    NewPipeYouTubeAudioSource.related(videoId, 15)
+                }
+                // Do not append stale results if the user picked a new song while
+                // the network call was running, or manually created a new queue.
+                if (player.currentMediaItem?.mediaId != currentItem.mediaId || player.hasNextMediaItem()) {
+                    return@launch
+                }
+
+                val knownIds = LinkedHashSet<String>()
+                for (i in 0 until player.mediaItemCount) {
+                    player.getMediaItemAt(i).mediaMetadata.extras
+                        ?.getString("pulse.trackId")?.let(knownIds::add)
+                }
+                knownIds.addAll(queuedRelatedIds)
+
+                val nextItems = suggestions
+                    .asSequence()
+                    .filter { it.provider.equals("youtube", ignoreCase = true) }
+                    .filter { it.id.matches(Regex("[A-Za-z0-9_-]{11}")) && it.durationMs > 0L }
+                    .filter { knownIds.add(it.id) }
+                    .take(12)
+                    .map(::toRelatedMediaItem)
+                    .toList()
+
+                if (nextItems.isEmpty()) return@launch
+                nextItems.forEach { item ->
+                    player.addMediaItem(item)
+                    item.mediaMetadata.extras?.getString("pulse.trackId")?.let {
+                        queuedRelatedIds.add(it)
+                    }
+                }
+                while (queuedRelatedIds.size > 200) {
+                    queuedRelatedIds.remove(queuedRelatedIds.first())
+                }
+                publishQueue()
+                savePlaybackState()
+
+                // If the current item ended before recommendations arrived, continue
+                // only if playback was still requested; never restart a paused player.
+                if (player.playbackState == Player.STATE_ENDED &&
+                    wasPlaying && player.playWhenReady && player.hasNextMediaItem()
+                ) {
+                    player.seekToNextMediaItem()
+                    player.prepare()
+                    player.play()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                android.util.Log.w("PulsePlaybackService", "Could not load related YouTube tracks", t)
+            } finally {
+                if (relatedRequestFor == videoId) relatedRequestFor = null
+            }
+        }
+    }
+
+    private fun toRelatedMediaItem(track: TrackSearchResult): MediaItem {
+        val id = track.id
+        return MediaItem.Builder()
+            .setMediaId("remote:youtube:$id")
+            .setUri(android.net.Uri.parse("pulse-yt://$id"))
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setAlbumTitle(track.album.ifBlank { "YouTube" })
+                    .setArtworkUri(track.artworkUrl?.takeIf { it.startsWith("https://") }?.let(android.net.Uri::parse))
+                    .setIsPlayable(true)
+                    .setExtras(Bundle().apply {
+                        putString("pulse.source", "online")
+                        putString("pulse.provider", "youtube")
+                        putString("pulse.trackId", id)
+                        putString("pulse.artworkUrl", track.artworkUrl)
+                        putLong("pulse.durationMs", track.durationMs.coerceAtLeast(0L))
+                        putBoolean("pulse.autoplayRelated", true)
+                    })
+                    .build()
+            )
+            .build()
+    }
+
     /** Position snapshots at 2 Hz while playing (the UI interpolates between). */
     private fun startPositionBroadcast() {
         if (positionJob?.isActive == true) return
@@ -389,12 +499,28 @@ class PulsePlaybackService : MediaSessionService() {
         if (!::player.isInitialized) return
         runCatching {
         val uids = ArrayList<String>(player.mediaItemCount)
+        val rows = org.json.JSONArray()
         for (i in 0 until player.mediaItemCount) {
-            uids.add(player.getMediaItemAt(i).mediaId)
+            val item = player.getMediaItemAt(i)
+            uids.add(item.mediaId)
+            val metadata = item.mediaMetadata
+            val extras = metadata.extras
+            rows.put(JSONObject().apply {
+                put("uid", item.mediaId)
+                put("title", metadata.title?.toString().orEmpty())
+                put("artist", metadata.artist?.toString().orEmpty())
+                put("album", metadata.albumTitle?.toString().orEmpty())
+                put("artworkUrl", extras?.getString("pulse.artworkUrl") ?: JSONObject.NULL)
+                put("source", extras?.getString("pulse.source") ?: "local")
+                put("provider", extras?.getString("pulse.provider") ?: JSONObject.NULL)
+                put("trackId", extras?.getString("pulse.trackId") ?: JSONObject.NULL)
+                put("durationMs", extras?.getLong("pulse.durationMs")?.takeIf { it > 0L } ?: if (i == player.currentMediaItemIndex && player.duration != C.TIME_UNSET) player.duration else 0L)
+            })
         }
         EventBus.emit(
             BridgeProtocol.EVENT_QUEUE,
             "uids" to org.json.JSONArray(uids),
+            "items" to rows,
             "currentUid" to currentUid()
         )
         }.onFailure {

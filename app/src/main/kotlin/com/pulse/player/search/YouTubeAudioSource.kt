@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -15,6 +16,7 @@ import org.schabi.newpipe.extractor.exceptions.PaidContentException
 import org.schabi.newpipe.extractor.search.SearchExtractor
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
+import java.net.URI
 import java.util.concurrent.TimeUnit
 
 const val YOUTUBE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -22,7 +24,14 @@ const val YOUTUBE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleW
 interface YouTubeAudioSource {
     suspend fun search(query: String, limit: Int): List<TrackSearchResult>
     suspend fun resolveAudioUrl(videoId: String): String?
+    suspend fun loadPlaylist(url: String, limit: Int = 1000): YouTubePlaylist
+    suspend fun related(videoId: String, limit: Int = 15): List<TrackSearchResult>
 }
+
+data class YouTubePlaylist(
+    val title: String,
+    val tracks: List<TrackSearchResult>
+)
 
 class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {
     override fun execute(request: Request): Response {
@@ -32,9 +41,7 @@ class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {
             data.toRequestBody()
         } else if (httpMethod.equals("POST", ignoreCase = true)) {
             ByteArray(0).toRequestBody()
-        } else {
-            null
-        }
+        } else null
 
         val builder = okhttp3.Request.Builder()
             .url(request.url())
@@ -43,7 +50,6 @@ class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {
         request.headers().forEach { (key, values) ->
             values.forEach { value -> builder.addHeader(key, value) }
         }
-
         if (request.headers()["User-Agent"] == null) {
             builder.header("User-Agent", YOUTUBE_USER_AGENT)
         }
@@ -54,7 +60,6 @@ class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {
         response.headers.names().forEach { name ->
             responseHeaders[name] = response.headers.values(name)
         }
-
         return Response(
             response.code,
             response.message,
@@ -66,7 +71,6 @@ class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {
 }
 
 object NewPipeYouTubeAudioSource : YouTubeAudioSource {
-
     @Volatile
     private var initialized = false
 
@@ -85,102 +89,163 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
 
     override suspend fun search(query: String, limit: Int): List<TrackSearchResult> = withContext(Dispatchers.IO) {
         init()
-        val service = ServiceList.YouTube
-        val searchExtractor = service.getSearchExtractor(query) as SearchExtractor
+        val extractor = ServiceList.YouTube.getSearchExtractor(query) as SearchExtractor
         try {
-            searchExtractor.fetchPage()
+            extractor.fetchPage()
         } catch (t: Throwable) {
-            throw ProviderException(explain(t), "search_error")
+            throw ProviderException("YouTube search failed: " + explain(t), "search_error")
+        }
+        extractor.initialPage?.items.orEmpty()
+            .filterIsInstance<StreamInfoItem>()
+            .mapNotNull(::toResult)
+            .distinctBy { it.id }
+            .take(limit.coerceIn(1, 50))
+    }
+
+    override suspend fun loadPlaylist(url: String, limit: Int): YouTubePlaylist = withContext(Dispatchers.IO) {
+        init()
+        val normalizedUrl = normalizePlaylistUrl(url)
+        val extractor = try {
+            ServiceList.YouTube.getPlaylistExtractor(normalizedUrl)
+        } catch (t: Throwable) {
+            throw ProviderException("That YouTube playlist link could not be opened.", "playlist_url")
         }
 
-        val page = searchExtractor.initialPage ?: return@withContext emptyList()
-        val items = page.items
-        if (items.isNullOrEmpty()) return@withContext emptyList()
+        try {
+            extractor.fetchPage()
+        } catch (t: Throwable) {
+            throw ProviderException("YouTube could not load this playlist: " + explain(t), "playlist_error")
+        }
 
-        val results = ArrayList<TrackSearchResult>()
-        for (item in items) {
-            if (results.size >= limit.coerceIn(1, 50)) break
-            if (item is StreamInfoItem) {
-                val videoId = extractVideoId(item.url)
-                if (videoId.isBlank()) continue
-                val title = item.name.orEmpty().ifBlank { "Unknown title" }
-                val artist = item.uploaderName.orEmpty().ifBlank { "YouTube" }
-                val artworkUrl = item.thumbnails?.firstOrNull()?.url
-                val durationMs = (item.duration.coerceAtLeast(0L)) * 1000L
+        val title = extractor.name.trim().ifBlank { "YouTube playlist" }
+        val maximum = limit.coerceIn(1, 1000)
+        val result = ArrayList<TrackSearchResult>()
+        val seen = HashSet<String>()
+        var page = extractor.initialPage
 
-                results.add(
-                    TrackSearchResult(
-                        id = videoId,
-                        title = title,
-                        artist = artist,
-                        album = "YouTube",
-                        artworkUrl = artworkUrl,
-                        durationMs = durationMs,
-                        streamUrl = "pulse-yt://$videoId",
-                        previewOnly = false,
-                        provider = "youtube"
-                    )
-                )
+        while (result.size < maximum) {
+            page.items.orEmpty().filterIsInstance<StreamInfoItem>().forEach { item ->
+                val track = toResult(item) ?: return@forEach
+                if (seen.add(track.id)) result.add(track)
+            }
+            if (result.size >= maximum) break
+            val nextPage: Page = page.nextPage ?: break
+            page = try {
+                extractor.getPage(nextPage)
+            } catch (t: Throwable) {
+                if (result.isNotEmpty()) break
+                throw ProviderException("YouTube could not read this playlist: " + explain(t), "playlist_error")
             }
         }
-        results
+
+        if (result.isEmpty()) {
+            throw ProviderException("No playable videos were found in this playlist.", "empty_playlist")
+        }
+        YouTubePlaylist(title, result.take(maximum))
+    }
+
+    override suspend fun related(videoId: String, limit: Int): List<TrackSearchResult> = withContext(Dispatchers.IO) {
+        init()
+        val id = cleanVideoId(videoId)
+        if (id.isBlank()) return@withContext emptyList()
+
+        val extractor = try {
+            ServiceList.YouTube.getStreamExtractor("https://www.youtube.com/watch?v=$id")
+        } catch (_: Throwable) {
+            return@withContext emptyList()
+        }
+        try {
+            extractor.fetchPage()
+        } catch (_: Throwable) {
+            return@withContext emptyList()
+        }
+
+        // Keep YouTube/NewPipe's own related-video order. It is the best available
+        // native signal for similarity and popularity without a developer API key.
+        extractor.relatedItems?.items.orEmpty()
+            .filterIsInstance<StreamInfoItem>()
+            .mapNotNull(::toResult)
+            .filter { it.id != id && it.durationMs > 0L }
+            .distinctBy { it.id }
+            .take(limit.coerceIn(1, 25))
     }
 
     override suspend fun resolveAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         init()
-        val id = videoId.trim()
-            .removePrefix("pulse-yt://")
-            .removePrefix("https://www.youtube.com/watch?v=")
-            .removePrefix("https://youtu.be/")
+        val id = cleanVideoId(videoId)
         if (id.isBlank()) return@withContext null
-
-        val watchUrl = "https://www.youtube.com/watch?v=$id"
-        val service = ServiceList.YouTube
-        val streamExtractor = try {
-            service.getStreamExtractor(watchUrl)
+        val extractor = try {
+            ServiceList.YouTube.getStreamExtractor("https://www.youtube.com/watch?v=$id")
         } catch (t: Throwable) {
-            throw ProviderException(explain(t), "stream_error")
+            throw ProviderException("Could not open this YouTube video: " + explain(t), "stream_error")
         }
-
         try {
-            streamExtractor.fetchPage()
+            extractor.fetchPage()
         } catch (t: Throwable) {
-            throw ProviderException(explain(t), "stream_error")
+            throw ProviderException("Could not load this YouTube video: " + explain(t), "stream_error")
         }
 
-        if (streamExtractor.streamType == StreamType.LIVE_STREAM) {
+        if (extractor.streamType == StreamType.LIVE_STREAM) {
             throw ProviderException("Live streams are not supported for audio playback.", "live_stream")
         }
-
-        val audioStreams = streamExtractor.audioStreams
-        if (audioStreams.isNullOrEmpty()) {
-            throw ProviderException("No audio stream available for this video.", "no_audio")
-        }
-
-        val bestStream = audioStreams
+        extractor.audioStreams.orEmpty()
             .filter { !it.url.isNullOrBlank() }
-            .maxByOrNull { it.averageBitrate.takeIf { b -> b > 0 } ?: it.bitrate }
-
-        bestStream?.url ?: throw ProviderException("Could not resolve audio stream URL.", "stream_error")
+            .maxByOrNull { it.averageBitrate.takeIf { bitrate -> bitrate > 0 } ?: it.bitrate }
+            ?.url
+            ?: throw ProviderException("Could not resolve the YouTube audio stream.", "no_audio")
     }
 
-    private fun extractVideoId(url: String): String {
-        val u = url.trim()
-        return when {
-            u.contains("v=") -> u.substringAfter("v=").substringBefore("&")
-            u.contains("youtu.be/") -> u.substringAfter("youtu.be/").substringBefore("?")
-            else -> u
+    private fun toResult(item: StreamInfoItem): TrackSearchResult? {
+        val id = cleanVideoId(item.url)
+        if (id.isBlank()) return null
+        return TrackSearchResult(
+            id = id,
+            title = item.name.orEmpty().ifBlank { "Unknown title" },
+            artist = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+            album = "YouTube",
+            artworkUrl = item.thumbnails?.firstOrNull()?.url,
+            durationMs = item.duration.coerceAtLeast(0L) * 1000L,
+            streamUrl = "pulse-yt://$id",
+            previewOnly = false,
+            provider = "youtube"
+        )
+    }
+
+    private fun normalizePlaylistUrl(raw: String): String {
+        val uri = runCatching { URI(raw.trim()) }.getOrNull()
+            ?: throw ProviderException("Paste a valid YouTube playlist link.", "playlist_url")
+        val host = uri.host?.lowercase().orEmpty().removePrefix("www.")
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        if (scheme !in setOf("http", "https") ||
+            host !in setOf("youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")) {
+            throw ProviderException("Paste a YouTube playlist link.", "playlist_url")
         }
+        val id = Regex("[?&]list=([^&]+)", RegexOption.IGNORE_CASE)
+            .find(raw)?.groupValues?.getOrNull(1)
+            ?.takeIf { it.matches(Regex("[A-Za-z0-9_-]+")) }
+            ?: throw ProviderException("This YouTube link does not contain a playlist ID.", "playlist_url")
+        return "https://www.youtube.com/playlist?list=$id"
+    }
+
+    private fun cleanVideoId(raw: String): String {
+        val value = raw.trim().removePrefix("pulse-yt://")
+        val candidates = listOf(
+            Regex("[?&]v=([A-Za-z0-9_-]{11})").find(value)?.groupValues?.getOrNull(1),
+            Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(value)?.groupValues?.getOrNull(1),
+            Regex("/(?:shorts|embed|live)/([A-Za-z0-9_-]{11})").find(value)?.groupValues?.getOrNull(1),
+            value.takeIf { Regex("^[A-Za-z0-9_-]{11}$").matches(it) }
+        )
+        return candidates.firstOrNull { !it.isNullOrBlank() }.orEmpty()
     }
 
     private fun explain(t: Throwable): String = when (t) {
-        is GeographicRestrictionException -> "This video is not available in your region."
-        is ContentNotAvailableException -> "This video is unavailable or has been removed."
-        is PaidContentException -> "This video is paid content and cannot be played."
+        is GeographicRestrictionException -> "The video is not available in your region."
+        is ContentNotAvailableException -> "The video is unavailable or has been removed."
+        is PaidContentException -> "The video is paid content and cannot be played."
         else -> when {
-            t.message?.contains("Age restricted", ignoreCase = true) == true -> "This video is age-restricted."
-            t.message?.contains("Sign in", ignoreCase = true) == true -> "This video requires YouTube sign-in."
-            else -> t.message?.take(120) ?: "YouTube service error."
+            t.message?.contains("Age restricted", ignoreCase = true) == true -> "The video is age-restricted."
+            t.message?.contains("Sign in", ignoreCase = true) == true -> "The video requires YouTube sign-in."
+            else -> t.message?.take(150) ?: "YouTube service error."
         }
     }
 }
