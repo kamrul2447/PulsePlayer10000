@@ -98,7 +98,7 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
         } catch (t: Throwable) {
             throw ProviderException("YouTube search failed: " + explain(t), "search_error")
         }
-        extractor.initialPage?.items.orEmpty()
+        extractor.initialPage.items
             .filterIsInstance<StreamInfoItem>()
             .mapNotNull(::toResult)
             .distinctBy { it.id }
@@ -129,7 +129,6 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
         val result = ArrayList<TrackSearchResult>()
         val seen = HashSet<String>()
         var page = extractor.initialPage
-            ?: throw ProviderException("YouTube returned no playlist page.", "empty_playlist")
         var pagesRead = 0
 
         while (result.size < maximum) {
@@ -185,7 +184,7 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
 
         // Keep YouTube/NewPipe's own related-video order. It is the best available
         // native signal for similarity and popularity without a developer API key.
-        extractor.relatedItems?.items.orEmpty()
+        extractor.relatedItems.items
             .filterIsInstance<StreamInfoItem>()
             .mapNotNull(::toResult)
             .filter { it.id != id && it.durationMs > 0L }
@@ -212,9 +211,9 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
             throw ProviderException("Live streams are not supported for audio playback.", "live_stream")
         }
         extractor.audioStreams.orEmpty()
-            .filter { !it.url.isNullOrBlank() }
+            .filter { it.isUrl && it.content.isNotBlank() }
             .maxByOrNull { it.averageBitrate.takeIf { bitrate -> bitrate > 0 } ?: it.bitrate }
-            ?.url
+            ?.content
             ?: throw ProviderException("Could not resolve the YouTube audio stream.", "no_audio")
     }
 
@@ -226,7 +225,7 @@ object NewPipeYouTubeAudioSource : YouTubeAudioSource {
             title = item.name.orEmpty().ifBlank { "Unknown title" },
             artist = item.uploaderName.orEmpty().ifBlank { "YouTube" },
             album = "YouTube",
-            artworkUrl = item.thumbnails?.firstOrNull()?.url,
+            artworkUrl = item.thumbnails.firstOrNull()?.url,
             durationMs = item.duration.coerceAtLeast(0L) * 1000L,
             streamUrl = "pulse-yt://$id",
             previewOnly = false,
