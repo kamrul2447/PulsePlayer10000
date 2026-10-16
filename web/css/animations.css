@@ -1,0 +1,116 @@
+/* ============================================================================
+   Pulse Player — animation system
+   Purposeful, short, premium. All motion is disabled automatically under
+   \`prefers-reduced-motion\` or the in-app "Reduce motion" setting.
+   ========================================================================== */
+
+@keyframes fade-in    { from { opacity: 0 } to { opacity: 1 } }
+@keyframes fade-out   { from { opacity: 1 } to { opacity: 0 } }
+@keyframes rise       { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+@keyframes rise-sm    { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+@keyframes pop-in     { 0% { transform: scale(.72); opacity: .4 } 60% { transform: scale(1.08) } 100% { transform: scale(1); opacity: 1 } }
+@keyframes heart-burst{ 0% { transform: scale(1) } 40% { transform: scale(1.45) } 70% { transform: scale(.92) } 100% { transform: scale(1) } }
+@keyframes shimmer    { from { background-position: 100% 0 } to { background-position: 0 0 } }
+@keyframes scan-slide { 0% { transform: translateX(-100%) } 100% { transform: translateX(340%) } }
+@keyframes spin       { to { transform: rotate(360deg) } }
+@keyframes eq-bounce  { from { height: 4px } to { height: 16px } }
+@keyframes pulse-bar  { 0%, 100% { transform: scaleY(.55) } 45% { transform: scaleY(1.25) } }
+@keyframes art-in     { from { opacity: 0; transform: scale(1.06) } to { opacity: 1; transform: none } }
+@keyframes art-out    { from { opacity: 1; transform: none } to { opacity: 0; transform: scale(.96) } }
+@keyframes glow       { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-ring) } 50% { box-shadow: 0 0 0 10px transparent } }
+@keyframes ripple-out { from { opacity: .35; transform: scale(0) } to { opacity: 0; transform: scale(2.6) } }
+
+/* Do not animate first paint while native snapshots/permissions are still arriving.
+   The page becomes interactive after the splash has finished, so navigation can
+   keep the premium motion without re-triggering it during startup. */
+body.booting .stagger > *,
+body.booting .homehero,
+body.booting .section,
+body.booting .empty { animation: none !important; opacity: 1 !important; transform: none !important; }
+
+/* Staggered entrance for list content */
+.stagger > * { animation: rise-sm var(--dur-mid) var(--ease-out) both; }
+.stagger > *:nth-child(1) { animation-delay: 0ms }
+.stagger > *:nth-child(2) { animation-delay: 18ms }
+.stagger > *:nth-child(3) { animation-delay: 36ms }
+.stagger > *:nth-child(4) { animation-delay: 54ms }
+.stagger > *:nth-child(5) { animation-delay: 72ms }
+.stagger > *:nth-child(n+6) { animation-delay: 90ms }
+
+/* Press ripple (added to tappable rows, removed when finished) */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  pointer-events: none;
+  animation: ripple-out 520ms var(--ease-out) forwards;
+  opacity: .3;
+  transform: scale(0);
+}
+
+/* Mini player entrance */
+@keyframes mini-in { from { transform: translateY(140%); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+
+/* Playing indicator on artwork (subtle breathing ring) */
+.player__art.is-playing::after {
+  content: "";
+  position: absolute; inset: -6px;
+  border-radius: calc(var(--r-xl) + 6px);
+  border: 1px solid var(--accent-ring);
+  animation: breathe 3.4s var(--ease-in-out) infinite;
+  pointer-events: none;
+}
+@keyframes breathe {
+  0%, 100% { opacity: .25; transform: scale(1) }
+  50%      { opacity: .7;  transform: scale(1.012) }
+}
+
+@keyframes art-float {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  50%      { transform: translateY(-3px) rotate(.35deg) scale(1.012); }
+}
+@keyframes art-ring {
+  0%   { transform: scale(.985) rotate(0deg); opacity: .15; }
+  50%  { transform: scale(1.018) rotate(180deg); opacity: .5; }
+  100% { transform: scale(.985) rotate(360deg); opacity: .15; }
+}
+@keyframes mini-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.035); }
+}
+@keyframes nav-pop {
+  0% { transform: scale(1); }
+  45% { transform: translateY(-2px) scale(1.12); }
+  100% { transform: scale(1); }
+}
+@keyframes playing-sheen {
+  from { transform: translateX(-120%); opacity: 0; }
+  25%  { opacity: .35; }
+  to   { transform: translateX(140%); opacity: 0; }
+}
+.player__art.is-playing {
+  animation: art-float 4.8s var(--ease-in-out) infinite;
+}
+.player__art.is-playing::before {
+  content: "";
+  position: absolute; inset: -10px;
+  border-radius: calc(var(--r-xl) + 10px);
+  border: 1px solid var(--accent-ring);
+  animation: art-ring 5.5s linear infinite;
+  pointer-events: none;
+}
+.mini.is-playing .mini__art { animation: mini-pulse 2.8s var(--ease-in-out) infinite; }
+.nav__tab.is-active .ico { animation: nav-pop 620ms var(--ease-out); }
+.player__art.is-playing::after { box-shadow: 0 0 26px var(--premium-glow, var(--accent-ring)); }
+
+/* Track-change flash on the title */
+.is-changing { animation: rise-sm var(--dur-mid) var(--ease-out) both; }
+
+/* Reduced motion: behave, don't break */
+@media (prefers-reduced-motion: reduce) {
+  .player__art.is-playing, .mini.is-playing .mini__art, .nav__tab.is-active .ico { animation: none; }
+  .player__art.is-playing::before, .player__art.is-playing::after { animation: none; opacity: .35; }
+  .splash__bar { animation: none; }
+  .timerstatus__ring { animation: none; }
+  .eq span { animation: none; height: 9px; }
+}

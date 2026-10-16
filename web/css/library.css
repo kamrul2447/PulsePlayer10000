@@ -1,0 +1,116 @@
+/* ============================================================================
+   Pulse Player — library views (songs, artists, albums, grids)
+   ========================================================================== */
+
+.library__body { padding-bottom: var(--sp-4); }
+
+/* Sticky count header inside song lists */
+.listhead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--page-pad) var(--sp-2);
+  position: sticky; top: 46px;
+  background: linear-gradient(var(--bg) 65%, transparent);
+  z-index: 3;
+}
+.listhead__count { font-size: var(--fs-caption); color: var(--text-3); }
+
+/* Album / artist grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--page-pad) var(--sp-4);
+}
+.gridcard { transition: transform var(--dur-fast) var(--ease-out); }
+.gridcard:active { transform: scale(.965); }
+.gridcard__art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+}
+.gridcard__art img { width: 100%; height: 100%; object-fit: cover; }
+.gridcard--round .gridcard__art { border-radius: var(--r-full); }
+.gridcard__title {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-body); font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gridcard__sub {
+  font-size: var(--fs-caption); color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gridcard__placeholder {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  color: rgba(255, 255, 255, .82);
+}
+.gridcard__placeholder .ico { width: 34px; height: 34px; }
+
+/* Sticky letter index for artists */
+.alpha {
+  position: absolute; right: 2px; top: 0; bottom: 0;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 1px; z-index: 6; padding-right: 2px;
+}
+.alpha span {
+  font-size: 9px; font-weight: 700; color: var(--text-3);
+  padding: 1px 3px; text-align: center;
+}
+
+/* Shuffle-all bar */
+.shuffleall {
+  display: flex; align-items: center; gap: var(--sp-3);
+  margin: var(--sp-1) var(--page-pad) var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  width: calc(100% - var(--page-pad) * 2);
+  font-weight: 600; font-size: var(--fs-sub);
+  transition: background var(--dur-fast), transform var(--dur-fast);
+}
+.shuffleall:active { transform: scale(.985); background: var(--surface-3); }
+.shuffleall .ico { color: var(--accent); }
+
+/* Search result groups */
+.resultgroup { padding-bottom: var(--sp-3); }
+.resultgroup__title {
+  padding: var(--sp-4) var(--page-pad) var(--sp-2);
+  font-size: var(--fs-micro); font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.onlineblock {
+  margin: var(--sp-3) var(--page-pad);
+  padding: var(--sp-5);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  text-align: center;
+}
+.onlineblock__glyph { color: var(--text-3); margin-bottom: var(--sp-2); }
+.onlineblock__title { font-weight: 650; font-size: var(--fs-sub); }
+.onlineblock__text { font-size: var(--fs-caption); color: var(--text-3); margin-top: 4px; line-height: var(--lh-snug); }
+
+/* Online result row (future provider) */
+.onlinerow {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  margin: 0 var(--sp-2);
+  border-radius: var(--r-md);
+}
+.onlinerow:active { background: var(--pressed); }
+.onlinerow__art {
+  width: 52px; height: 52px; border-radius: var(--r-sm);
+  background: var(--surface-3); overflow: hidden; flex: none;
+}
+.onlinerow__art img { width: 100%; height: 100%; object-fit: cover; }
+.onlinerow__badge {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .6px;
+  padding: 2px 6px; border-radius: var(--r-full);
+  background: var(--surface-3); color: var(--text-3);
+}
+.onlinerow__badge.is-local { background: var(--accent-soft); color: var(--accent); }

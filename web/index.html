@@ -1,27 +1,313 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<!--
+  Pulse Player — frontend shell (runs inside the Android WebView).
+  Loaded by the app from https://pulse.local/index.html, intercepted by
+  PulseWebViewClient and served from the APK assets folder.
+
+  Load order matters: classic scripts (no ES modules) are used on purpose so the
+  UI also works on older Android System WebView builds.
+-->
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0b12">
-  <meta name="color-scheme" content="dark light">
-  <title>Pulse Player</title>
-  <link rel="stylesheet" href="css/app.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0A0A0E">
+<meta name="description" content="Pulse Player — a premium, offline-first music player for Android.">
+<meta name="robots" content="noindex">
+<title>Pulse Player</title>
+
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/library.css">
+<link rel="stylesheet" href="css/player.css">
+<link rel="stylesheet" href="css/settings.css">
+<link rel="stylesheet" href="css/animations.css">
+<link rel="stylesheet" href="css/premium.css">
 </head>
-<body>
-  <div id="splash" class="splash" aria-hidden="true">
-    <div class="splash-ripple ripple-one"></div>
-    <div class="splash-ripple ripple-two"></div>
-    <div class="splash-ripple ripple-three"></div>
-    <div class="splash-mark"><span class="pulse-mark">P</span></div>
-    <div class="splash-name">PULSE<span>PLAYER</span></div>
-    <div class="splash-caption">Music, without the fuss.</div>
+
+<body class="booting">
+
+<!-- ══════════════════ SPLASH ══════════════════ -->
+<div id="splash" class="splash" role="status" aria-label="Loading Pulse Player">
+  <div class="splash__mark">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <defs>
+        <linearGradient id="splashGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#8B5CF6"/>
+          <stop offset="55%" stop-color="#7C3AED"/>
+          <stop offset="100%" stop-color="#4C1D95"/>
+        </linearGradient>
+      </defs>
+      <rect x="6" y="6" width="108" height="108" rx="32" fill="url(#splashGrad)"/>
+      <g fill="#FFFFFF">
+        <rect class="splash__bar" x="30"  y="52" width="7" height="16" rx="3.5"/>
+        <rect class="splash__bar" x="43"  y="44" width="7" height="32" rx="3.5"/>
+        <rect class="splash__bar" x="56"  y="34" width="7" height="52" rx="3.5"/>
+        <rect class="splash__bar" x="69"  y="44" width="7" height="32" rx="3.5"/>
+        <rect class="splash__bar" x="82"  y="52" width="7" height="16" rx="3.5"/>
+      </g>
+    </svg>
   </div>
-  <div id="app" class="app-root">
-    <noscript>Pulse Player needs JavaScript enabled to control local playback.</noscript>
+  <div class="splash__word">Pulse Player</div>
+  <div class="splash__status" id="splashStatus">Preparing your library…</div>
+</div>
+
+<!-- ══════════════════ APP ══════════════════ -->
+<div id="app" class="app" aria-hidden="true">
+
+  <!-- Top bar (contextual title + actions) -->
+  <header class="appbar" id="appbar">
+    <div class="appbar__titles">
+      <h1 class="appbar__title" id="appbarTitle">Home</h1>
+      <p class="appbar__subtitle" id="appbarSubtitle"></p>
+    </div>
+    <div class="appbar__actions" id="appbarActions"></div>
+  </header>
+
+  <main class="pages" id="pages">
+
+    <!-- ─────────── HOME ─────────── -->
+    <section class="page is-active" id="page-home" data-page="home" tabindex="-1">
+      <div class="page__scroll" id="homeScroll"></div>
+    </section>
+
+    <!-- ─────────── LIBRARY ─────────── -->
+    <section class="page" id="page-library" data-page="library" tabindex="-1">
+      <div class="page__scroll" id="libraryScroll">
+        <div class="filterbar" id="filterBar" role="tablist" aria-label="Library views"></div>
+        <div class="library__body" id="libraryBody"></div>
+      </div>
+    </section>
+
+    <!-- ─────────── SEARCH ─────────── -->
+    <section class="page" id="page-search" data-page="search" tabindex="-1">
+      <div class="page__scroll" id="searchScroll"></div>
+    </section>
+
+    <!-- ─────────── SETTINGS ─────────── -->
+    <section class="page" id="page-settings" data-page="settings" tabindex="-1">
+      <div class="page__scroll" id="settingsScroll"></div>
+    </section>
+
+  </main>
+
+  <!-- ─────────── MINI PLAYER ─────────── -->
+  <div class="mini" id="miniPlayer" role="button" tabindex="0" aria-label="Open now playing">
+    <div class="mini__progress"><span id="miniProgressFill"></span></div>
+    <div class="mini__art" id="miniArt"></div>
+    <div class="mini__meta">
+      <div class="mini__title" id="miniTitle">Nothing playing</div>
+      <div class="mini__sub" id="miniSub">Pick a song to start</div>
+    </div>
+    <div class="mini__buttons">
+      <button class="iconbtn iconbtn--ghost" id="miniPrev" aria-label="Previous track">
+        <svg class="ico"><use href="#i-prev"/></svg>
+      </button>
+      <button class="iconbtn iconbtn--accent" id="miniPlay" aria-label="Play">
+        <svg class="ico" id="miniPlayIcon"><use href="#i-play"/></svg>
+      </button>
+      <button class="iconbtn iconbtn--ghost" id="miniNext" aria-label="Next track">
+        <svg class="ico"><use href="#i-next"/></svg>
+      </button>
+    </div>
   </div>
-  <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
-  <script src="js/core/bridge.js"></script>
-  <script src="js/app.js"></script>
+
+
+  <!-- ─────────── MAIN NAVIGATION ─────────── -->
+  <nav class="nav" id="bottomNav" aria-label="Main navigation">
+    <button class="nav__tab is-active" data-page="home" aria-label="Home">
+      <svg class="ico"><use href="#i-home"/></svg><span>Home</span>
+    </button>
+    <button class="nav__tab" data-page="search" aria-label="Search">
+      <svg class="ico"><use href="#i-search"/></svg><span>Search</span>
+    </button>
+    <button class="nav__tab" data-page="library" aria-label="Library">
+      <svg class="ico"><use href="#i-library"/></svg><span>Library</span>
+    </button>
+    <button class="nav__tab" data-page="settings" aria-label="Settings">
+      <svg class="ico"><use href="#i-settings"/></svg><span>Settings</span>
+    </button>
+    <div class="nav__indicator" id="navIndicator"></div>
+  </nav>
+
+
+</div>
+
+<!-- ══════════════════ FULL PLAYER ══════════════════ -->
+<div class="player" id="fullPlayer" role="dialog" aria-modal="true" aria-label="Now playing" aria-hidden="true">
+  <div class="player__bg" id="playerBg"></div>
+  <div class="player__scrim"></div>
+
+  <div class="player__inner">
+    <div class="player__grab" id="playerGrab"><span></span></div>
+
+    <header class="player__head">
+      <button class="iconbtn iconbtn--ghost" id="playerClose" aria-label="Close player">
+        <svg class="ico"><use href="#i-chevron-down"/></svg>
+      </button>
+      <div class="player__headlabel">
+        <span class="player__kicker" id="playerKicker">Now playing</span>
+        <span class="player__album" id="playerAlbum"></span>
+      </div>
+      <button class="iconbtn iconbtn--ghost" id="playerQueue" aria-label="Queue">
+        <svg class="ico"><use href="#i-queue"/></svg>
+      </button>
+    </header>
+
+    <div class="player__artwrap">
+      <div class="player__art" id="playerArt">
+        <img id="playerArtImg" alt="" hidden>
+        <div class="player__artfallback" id="playerArtFallback"><svg class="ico"><use href="#i-note"/></svg></div>
+      </div>
+    </div>
+
+    <div class="player__meta">
+      <div class="player__text">
+        <h2 class="player__title" id="playerTitle">Nothing playing</h2>
+        <p class="player__artist" id="playerArtist">Unknown artist</p>
+      </div>
+      <button class="iconbtn iconbtn--fav" id="playerFav" aria-label="Toggle favourite" aria-pressed="false">
+        <svg class="ico" id="playerFavIcon"><use href="#i-heart"/></svg>
+      </button>
+    </div>
+
+    <div class="player__progress">
+      <div class="seek" id="seekTrack">
+        <div class="seek__buffer" id="seekBuffer"></div>
+        <div class="seek__fill" id="seekFill"></div>
+        <div class="seek__thumb" id="seekThumb"></div>
+      </div>
+      <div class="seek__times">
+        <span id="timeCurrent">0:00</span>
+        <span id="timeRemaining">-0:00</span>
+      </div>
+    </div>
+
+    <div class="player__controls">
+      <button class="playerbtn" id="btnShuffle" aria-label="Shuffle" aria-pressed="false">
+        <svg class="ico"><use href="#i-shuffle"/></svg>
+      </button>
+      <button class="playerbtn" id="btnPrev" aria-label="Previous">
+        <svg class="ico"><use href="#i-prev"/></svg>
+      </button>
+      <button class="playbtn" id="btnPlay" aria-label="Play">
+        <svg class="ico" id="btnPlayIcon"><use href="#i-play"/></svg>
+      </button>
+      <button class="playerbtn" id="btnNext" aria-label="Next">
+        <svg class="ico"><use href="#i-next"/></svg>
+      </button>
+      <button class="playerbtn" id="btnRepeat" aria-label="Repeat" aria-pressed="false">
+        <svg class="ico" id="btnRepeatIcon"><use href="#i-repeat"/></svg>
+      </button>
+    </div>
+
+    <div class="player__footer">
+      <button class="pillbtn" id="btnSleep">
+        <svg class="ico"><use href="#i-timer"/></svg><span id="sleepPillLabel">Sleep</span>
+      </button>
+      <button class="pillbtn" id="btnVolumeToggle" aria-label="Volume">
+        <svg class="ico" id="volIcon"><use href="#i-volume-high"/></svg>
+      </button>
+      <div class="volume" id="volumeRow" hidden>
+        <svg class="ico ico--sm"><use href="#i-volume-low"/></svg>
+        <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+        <span class="volume__val" id="volumeValue">100</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ SHEETS / TOAST / ONBOARDING ══════════════════ -->
+<div class="sheet" id="sheet" aria-hidden="true">
+  <div class="sheet__backdrop" id="sheetBackdrop"></div>
+  <div class="sheet__panel" id="sheetPanel" role="dialog" aria-modal="true">
+    <div class="sheet__grab"><span></span></div>
+    <div class="sheet__head" id="sheetHead"></div>
+    <div class="sheet__body" id="sheetBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="onboarding" id="onboarding" hidden>
+  <div class="onboarding__card" id="onboardingCard"></div>
+</div>
+
+<!-- ══════════════════ ICON SPRITE ══════════════════ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <g id="i-base"></g>
+  </defs>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.6 12 3.2l9 7.4V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/><path d="M6.5 3.5v17M17.5 3.5v17"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20.2 20.2-4.1-4.1"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 3.2 13.35 5l2.25.45.95-1.02 1.8 1.8-1.02.95.45 2.25L21.8 10.8v2.55l-2.02 1.35-.45 2.25 1.02.95-1.8 1.8-.95-1.02-2.25.45L12 20.8l-1.35-1.67-2.25-.45-.95 1.02-1.8-1.8 1.02-.95-.45-2.25L2.2 13.35V10.8l2.02-1.35.45-2.25-1.02-.95 1.8-1.8.95 1.02 2.25-.45L12 3.2Z"/><circle cx="12" cy="12" r="3.15"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" class="ico--fill"><path d="M8 5.2a1 1 0 0 1 1.5-.87l10 6.13a1 1 0 0 1 0 1.71l-10 6.13A1 1 0 0 1 8 17.8z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" class="ico--fill"><rect x="6.5" y="5" width="4" height="14" rx="1.6"/><rect x="13.5" y="5" width="4" height="14" rx="1.6"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24" class="ico--fill"><path d="M18.4 6.1a1 1 0 0 1 1.6.8v10.2a1 1 0 0 1-1.6.8L10.5 12.8a1 1 0 0 1 0-1.6z"/><rect x="4" y="5.5" width="2.6" height="13" rx="1.3"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24" class="ico--fill"><path d="M5.6 6.1a1 1 0 0 0-1.6.8v10.2a1 1 0 0 0 1.6.8l7.9-6.1a1 1 0 0 0 0-1.6z"/><rect x="17.4" y="5.5" width="2.6" height="13" rx="1.3"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3.5H21V8.5"/><path d="M4 20 20.5 3.5"/><path d="M20.5 15.5v5H15.5"/><path d="M14.8 14.8 20.5 20.5"/><path d="M4 4l5.2 5.2"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 2.5 21 6.5l-4 4"/><path d="M3 11.5V9.5a4 4 0 0 1 4-4h14"/><path d="M7 21.5 3 17.5l4-4"/><path d="M21 12.5v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-repeat-one" viewBox="0 0 24 24"><path d="M17 2.5 21 6.5l-4 4"/><path d="M3 11.5V9.5a4 4 0 0 1 4-4h14"/><path d="M7 21.5 3 17.5l4-4"/><path d="M21 12.5v2a4 4 0 0 1-4 4H3"/><path d="M12.6 10.4 14 9.6v4.8" stroke-width="2.1"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.4 4.7 13.2a4.7 4.7 0 0 1 6.6-6.6l.7.7.7-.7a4.7 4.7 0 0 1 6.6 6.6z"/></symbol>
+  <symbol id="i-heart-fill" viewBox="0 0 24 24" class="ico--fill"><path d="M12 20.4 4.7 13.2a4.7 4.7 0 0 1 6.6-6.6l.7.7.7-.7a4.7 4.7 0 0 1 6.6 6.6z"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="8"/><path d="M12 9.5v4.2l3 1.9"/><path d="M9.2 2.5h5.6"/></symbol>
+  <symbol id="i-volume-high" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M15.4 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.6a7.7 7.7 0 0 1 0 10.8"/></symbol>
+  <symbol id="i-volume-low" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M15.4 9.2a4 4 0 0 1 0 5.6"/></symbol>
+  <symbol id="i-volume-mute" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3.5 6.5H16M3.5 12H16M3.5 17.5h8"/><path d="M19 13.2v5.6l4-2.8z" class="ico--fill" stroke="none"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.8-6.3"/><path d="M20.5 3.5v5h-5"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M20 8.5V6a2 2 0 0 0-2-2h-2.5M4 15.5V18a2 2 0 0 0 2 2h2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5"/><path d="M3.5 12h17"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M9.5 17.5V5.5 5.5L19.5 3v12"/><circle cx="6.2" cy="17.8" r="2.9"/><circle cx="16.4" cy="15.2" r="2.9"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><path d="M4 7h16v12H4z"/><path d="M3 4h18v3H3zM9 11h6v2H9z"/></symbol>
+  <symbol id="i-album" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-artist" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.2 11.5a6.8 6.8 0 0 0 13.6 0"/><path d="M12 18.4V21.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.2A2 2 0 0 1 5.5 5.2h3.2l2 2.4h7.8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.3 14.8A8.8 8.8 0 0 1 9.2 3.7a8.8 8.8 0 1 0 11.1 11.1z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3 6.7 6.7M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3 5.3 18.7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.8 4.4 4.4L19 7.6"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="m3 3 18 18"/><path d="M8.6 16.4a5 5 0 0 1 6.9 0"/><path d="M5 12.9a10 10 0 0 1 5-2.7"/><path d="M19 12.9a10 10 0 0 0-6.5-2.8"/><path d="M2 8.8A15 15 0 0 1 7 5.6"/><path d="M22 8.8a15 15 0 0 0-9.6-3.4"/><circle cx="12" cy="20" r="1.1" class="ico--fill" stroke="none"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.8" y="10.2" width="14.4" height="10.3" rx="2.4"/><path d="M8.2 10.2V7.4a3.8 3.8 0 0 1 7.6 0v2.8"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.8h16M9.5 6.8V4.6h5v2.2M6.4 6.8 7.4 20a1 1 0 0 0 1 .9h7.2a1 1 0 0 0 1-.9l1-13.2"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3.2 13.7 9 19.5 10.7 13.7 12.4 12 18.2 10.3 12.4 4.5 10.7 10.3 9z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.7" class="ico--fill" stroke="none"/><circle cx="12" cy="12" r="1.7" class="ico--fill" stroke="none"/><circle cx="12" cy="18.5" r="1.7" class="ico--fill" stroke="none"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2.5M8 7.5v9M12 4v16M16 8.5v7M20.5 10.5v3"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M4 7h13M4 12h9M4 17h5"/><path d="M17 15.5v5M17 20.5l-2.2-2.2M17 20.5l2.2-2.2" /></symbol>
+</svg>
+
+<!-- ══════════════════ SCRIPTS ══════════════════ -->
+<script src="js/core/util.js"></script>
+<script src="js/core/store.js"></script>
+<script src="js/core/bridge.js"></script>
+<script src="js/core/artwork.js"></script>
+<script src="js/core/theme.js"></script>
+<script src="js/data/library.js"></script>
+<script src="js/features/favorites.js"></script>
+<script src="js/features/sleeptimer.js"></script>
+<script src="js/features/ads.js"></script>
+<script src="js/features/search.js"></script>
+<script src="js/ui/common.js"></script>
+<script src="js/ui/toast.js"></script>
+<script src="js/ui/splash.js"></script>
+<script src="js/ui/sheet.js"></script>
+<script src="js/ui/nav.js"></script>
+<script src="js/ui/home.js"></script>
+<script src="js/ui/library.js"></script>
+<script src="js/ui/search.js"></script>
+<script src="js/ui/settings.js"></script>
+<script src="js/ui/onboarding.js"></script>
+<script src="js/player/progress.js"></script>
+<script src="js/player/playback.js"></script>
+<script src="js/player/playerui.js"></script>
+<script src="js/player/miniplayer.js"></script>
+<script src="js/player/queue.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

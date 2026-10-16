@@ -1,0 +1,201 @@
+/* ============================================================================
+   Pulse Player — base layout, reset, app shell, page transitions
+   ========================================================================== */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: none; cursor: pointer; }
+img { display: block; max-width: 100%; }
+ul { list-style: none; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* Icons ------------------------------------------------------------------ */
+.ico {
+  width: 22px; height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+  pointer-events: none;
+}
+.ico--fill, .ico--fill path, .ico--fill rect, .ico--fill circle { fill: currentColor; }
+.ico--sm { width: 17px; height: 17px; }
+.ico--lg { width: 28px; height: 28px; }
+
+/* Scroll containers ------------------------------------------------------ */
+::-webkit-scrollbar { width: 0; height: 0; }
+* { scrollbar-width: none; }
+
+/* ─────────── App shell ─────────── */
+.app {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  padding-top: var(--safe-t);
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+body.ready .app { opacity: 1; }
+body.booting .app { pointer-events: none; }
+
+.appbar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--page-pad) var(--sp-2);
+  min-height: 52px;
+  flex: none;
+  position: relative;
+  z-index: 5;
+}
+.appbar__titles { flex: 1; min-width: 0; }
+.appbar__title {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  line-height: 1.1;
+}
+.appbar__subtitle {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+  margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.appbar__actions { display: flex; gap: var(--sp-1); flex: none; }
+
+/* ─────────── Pages ─────────── */
+.pages {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  z-index: var(--z-page);
+}
+.page {
+  position: absolute; inset: 0;
+  opacity: 0;
+  transform: translateY(10px) scale(.995);
+  transition:
+    opacity var(--dur-page) var(--ease-out),
+    transform var(--dur-page) var(--ease-out);
+  pointer-events: none;
+  visibility: hidden;
+}
+.page.is-active {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  visibility: visible;
+}
+.page.is-leaving {
+  opacity: 0;
+  transform: translateY(-6px) scale(.995);
+}
+.page__scroll {
+  position: absolute; inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding-bottom: calc(var(--nav-h) + var(--mini-h) + var(--safe-b) + var(--sp-6));
+}
+body:not(.has-track) .page__scroll { padding-bottom: calc(var(--nav-h) + var(--safe-b) + var(--sp-5)); }
+
+/* ─────────── Bottom nav ─────────── */
+.nav {
+  position: relative;
+  flex: none;
+  height: calc(var(--nav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  display: flex;
+  align-items: flex-start;
+  background: var(--surface-glass);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border-top: 1px solid var(--border);
+  z-index: var(--z-nav);
+}
+.nav__tab {
+  flex: 1;
+  height: var(--nav-h);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: .3px;
+  transition: color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  position: relative;
+}
+.nav__tab .ico { transition: transform var(--dur-mid) var(--ease-spring); }
+.nav__tab.is-active { color: var(--accent); }
+.nav__tab.is-active .ico { transform: translateY(-1px) scale(1.06); }
+.nav__tab:active { transform: scale(.94); }
+.nav__indicator {
+  position: absolute;
+  top: 0; left: 0;
+  height: 2.5px;
+  width: 26px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent);
+  transform: translateX(0);
+  transition: transform var(--dur-mid) var(--ease-out), background var(--dur-fast);
+  pointer-events: none;
+}
+
+/* ─────────── Splash ─────────── */
+.splash {
+  position: fixed; inset: 0;
+  z-index: var(--z-splash);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-4);
+  background:
+    radial-gradient(120% 80% at 50% 12%, rgba(124, 58, 237, .28), transparent 60%),
+    var(--bg);
+  transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out);
+}
+.splash__mark { width: 108px; height: 108px; }
+.splash__mark svg { width: 100%; height: 100%; }
+.splash__bar { transform-box: fill-box; transform-origin: center; animation: pulse-bar 1.6s var(--ease-in-out) infinite; }
+.splash__bar:nth-child(2) { animation-delay: .1s; }
+.splash__bar:nth-child(3) { animation-delay: .2s; }
+.splash__bar:nth-child(4) { animation-delay: .3s; }
+.splash__bar:nth-child(5) { animation-delay: .4s; }
+.splash__word {
+  font-size: var(--fs-h2); font-weight: 700; letter-spacing: -.5px;
+  background: linear-gradient(120deg, var(--text) 35%, var(--brand-300));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.splash__status { font-size: var(--fs-caption); color: var(--text-3); min-height: 16px; }
+.splash.is-hiding { opacity: 0; transform: scale(1.04); pointer-events: none; }
+
+/* ─────────── Utility ─────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.row { display: flex; align-items: center; }
+.grow { flex: 1; min-width: 0; }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
