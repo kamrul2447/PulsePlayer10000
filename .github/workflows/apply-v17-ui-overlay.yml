@@ -1,0 +1,43 @@
+name: Apply supplied Pulse Player v17 UI pack
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'PulsePlayer_AS_v17_UI_Update.zip'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply-v17-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Replace only the WebView UI with the supplied overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s PulsePlayer_AS_v17_UI_Update.zip
+          rm -rf .ui-overlay
+          mkdir -p .ui-overlay
+          unzip -oq PulsePlayer_AS_v17_UI_Update.zip -d .ui-overlay
+          test -s .ui-overlay/web/index.html
+          test -s .ui-overlay/web/js/core/bridge.js
+          test -s .ui-overlay/web/js/app.js
+          test -s .ui-overlay/web/css/app.css
+          rm -rf web
+          cp -R .ui-overlay/web web
+          rm -rf .ui-overlay
+          rm -f PulsePlayer_AS_v17_UI_Update.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The supplied UI pack produces no source changes."
+            exit 0
+          fi
+          git commit -m "Restore original v17 UI from supplied update pack"
+          git push origin HEAD:master
