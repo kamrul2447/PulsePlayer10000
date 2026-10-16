@@ -1,8 +1,8 @@
-/* Pulse Player — Search UI. Local searches stay instant; online playback stays native. */
-(function (global) {
+/* Pulse Player — local + online search, YouTube playlists and saved shortcuts. */
+(function(global){
  'use strict';
  var P=global.Pulse=P||{},U=P.util,S=P.store;
- var root,input,field,results,tools,built=false,lastQuery='',playlist=null,items=[],loading=false,complete=false,errorText='',queueActive=false,queueShuffle=false,queueStart='',queued=Object.create(null),requestSeq=0;
+ var root,input,field,results,tools,built=false,lastQuery='',playlist=null,items=[],loading=false,complete=false,errorText='',queueActive=false,queueShuffle=false,queueStart='',queued=Object.create(null);
  var SAVED_KEY='pulse.savedYouTubePlaylists.v1';
  function byId(x){return String(x&&(x.id||x.trackId||x.url)||'');}
  function getSaved(){try{var a=JSON.parse(global.localStorage.getItem(SAVED_KEY)||'[]');return Array.isArray(a)?a.filter(function(x){return x&&x.id&&x.url;}).slice(0,20):[];}catch(e){return[];}}
@@ -19,12 +19,8 @@
   root.appendChild(field);root.appendChild(tools);root.appendChild(results);renderSuggestions();
  }
  function buildTools(){
-  var space=U.h('button.searchtool',{type:'button',onclick:function(){P.bridge.openAppSpace();}},
-    U.h('div.searchtool__icon.searchtool__icon--space',{text:'S'}),
-    U.h('div.searchtool__body',U.h('div.searchtool__title',{text:'SnapTube App Space'}),U.h('div.searchtool__sub',{text:'Open the installed SnapTube app'})));
-  var manage=U.h('button.searchtool',{type:'button',onclick:showConnections},
-    U.h('div.searchtool__icon',{},U.icon('i-sparkle','ico--sm')),
-    U.h('div.searchtool__body',U.h('div.searchtool__title',{text:'Music sources'}),U.h('div.searchtool__sub',{text:'View online connection status'})));
+  var space=U.h('button.searchtool',{type:'button',onclick:function(){P.bridge.openAppSpace();}},U.h('div.searchtool__icon.searchtool__icon--space',{text:'S'}),U.h('div.searchtool__body',U.h('div.searchtool__title',{text:'SnapTube App Space'}),U.h('div.searchtool__sub',{text:'Open the installed SnapTube app'})));
+  var manage=U.h('button.searchtool',{type:'button',onclick:showConnections},U.h('div.searchtool__icon',{},U.icon('i-sparkle','ico--sm')),U.h('div.searchtool__body',U.h('div.searchtool__title',{text:'Music sources'}),U.h('div.searchtool__sub',{text:'View online connection status'})));
   return U.h('div.searchtools',space,manage);
  }
  function showConnections(){
@@ -32,50 +28,37 @@
   P.sheet.open({title:'Music sources',body:[
    P.sheet.row({icon:'i-wave',label:'YouTube via NewPipe Extractor',value:enabled?'Enabled':'Disabled',onClick:function(){P.sheet.close();P.toast.show('YouTube uses the built-in native extractor; no API key is required.');}}),
    P.sheet.row({icon:enabled?'i-pause':'i-play',label:enabled?'Disable online search':'Enable online search',onClick:function(){P.bridge.setSetting('onlineSearchEnabled',!enabled);P.sheet.close();P.toast.show(!enabled?'Online search enabled':'Online search disabled');}}),
-   P.sheet.row({icon:'i-refresh',label:'Test online connection',onClick:function(){P.sheet.close();if(!S.state.online.available){P.toast.show('Internet status is unavailable. Try a YouTube search.');return;}P.toast.show(S.state.online.available?'Network is available':'No network connection');}}),
-   U.h('p.apihelp',{text:'The current Android backend has one active online provider: YouTube. Custom API endpoints are not shown as working providers unless the native playback bridge supports their stream format.'})
+   P.sheet.row({icon:'i-refresh',label:'Test online connection',onClick:function(){P.sheet.close();if(S.state.online.available==null){P.toast.show('Network status is unknown. Try a YouTube search.');return;}P.toast.show(S.state.online.available?'Network is available':'No network connection');}}),
+   U.h('p.apihelp',{text:'The current Android backend uses YouTube as its online provider. It does not route custom API stream formats into Media3, so unsupported custom endpoints are not listed as working providers.'})
   ]});
  }
  function searchNow(raw){
-  var q=String(raw||'').trim();lastQuery=q;S.state.search.query=q;requestSeq++;
+  var q=String(raw||'').trim();lastQuery=q;S.state.search.query=q;
   playlist=null;items=[];loading=false;complete=false;errorText='';queueActive=false;queueShuffle=false;queueStart='';queued=Object.create(null);
   P.search.cancel();
   if(!q){P.search.reset();renderSuggestions();return;}
   var pl=parsePlaylist(q);
   if(pl){playlist=pl;loading=true;renderPlaylist();P.bridge.loadYouTubePlaylist(pl.url);return;}
   var video=parseVideo(q);
-  if(video){
-   P.search.reset();
-   results.replaceChildren();
-   results.appendChild(P.ui.section('YouTube video'));
-   results.appendChild(onlineRow(video));
-   results.appendChild(U.h('p.apihelp',{text:'Play the video to resolve its audio stream in the native player.'}));
-   return;
-  }
+  if(video){P.search.reset();U.clear(results);results.appendChild(P.ui.section('YouTube video'));results.appendChild(onlineRow(video));results.appendChild(U.h('p.apihelp',{text:'Play the video to resolve its audio stream in the native player.'}));return;}
   renderLocal(q);
   if(S.state.settings.onlineSearchEnabled!==false)P.search.online(q);
  }
  function resetSearch(){if(!input)return;lastQuery='';playlist=null;items=[];loading=false;complete=false;errorText='';queueActive=false;P.search.cancel();P.search.reset();renderSuggestions();}
  function renderSuggestions(){
-  if(!results)return;U.clear(results);
-  var saved=getSaved();
+  if(!results)return;U.clear(results);var saved=getSaved();
   results.appendChild(P.ui.section('Saved playlist links'));
-  if(saved.length){
-   saved.forEach(function(x){
-    results.appendChild(U.h('div.onlinerow.savedplaylist',
-     U.h('div.onlinerow__art',U.icon('i-queue','ico--sm')),
-     U.h('button.grow.savedplaylist__open',{type:'button',onclick:function(){input.value=x.url;field.classList.add('has-value');searchNow(x.url);}},U.h('div.track__title',{text:x.title||'YouTube playlist'}),U.h('div.track__sub',{text:'Saved link · loads online'})),
-     U.h('button.iconbtn',{type:'button','aria-label':'Remove saved playlist',onclick:function(){setSaved(getSaved().filter(function(y){return y.id!==x.id;}));renderSuggestions();P.toast.show('Playlist shortcut removed');}},U.icon('i-close','ico--sm'))));
-   });
-  }else results.appendChild(U.h('p.apihelp',{text:'Paste a YouTube playlist link once and save it here for quicker access next time.'}));
-  var songs=P.library.songs().slice(0,8);
-  results.appendChild(P.ui.section('Your music'));
+  if(saved.length)saved.forEach(function(x){
+   results.appendChild(U.h('div.onlinerow.savedplaylist',U.h('div.onlinerow__art',U.icon('i-queue','ico--sm')),
+    U.h('button.grow.savedplaylist__open',{type:'button',onclick:function(){input.value=x.url;field.classList.add('has-value');searchNow(x.url);}},U.h('div.track__title',{text:x.title||'YouTube playlist'}),U.h('div.track__sub',{text:'Saved link · loads online'})),
+    U.h('button.iconbtn',{type:'button','aria-label':'Remove saved playlist',onclick:function(){setSaved(getSaved().filter(function(y){return y.id!==x.id;}));renderSuggestions();P.toast.show('Playlist shortcut removed');}},U.icon('i-close','ico--sm'))));
+  });else results.appendChild(U.h('p.apihelp',{text:'Paste a YouTube playlist link once and save it here for quicker access next time.'}));
+  var songs=P.library.songs().slice(0,8);results.appendChild(P.ui.section('Your music'));
   if(songs.length)songs.forEach(function(t,i){results.appendChild(P.ui.trackRow(t,{list:songs,source:'search',index:i}));});
   else results.appendChild(P.ui.empty({icon:'i-search',title:'No local songs found',text:'Scan your device library after adding music.'}));
  }
  function renderLocal(q){
-  if(!results)return;U.clear(results);
-  var local=P.search.local(q),rows=local.songs||[];
+  if(!results)return;U.clear(results);var local=P.search.local(q),rows=local.songs||[];
   results.appendChild(P.ui.section('Songs on this device'));
   if(rows.length){var wrap=U.h('div.stagger');rows.forEach(function(t,i){wrap.appendChild(P.ui.trackRow(t,{list:rows,source:'search',index:i}));});results.appendChild(wrap);}
   else results.appendChild(P.ui.empty({icon:'i-search',title:'No local matches',text:'No local song matches “'+q+'”.'+(S.state.settings.onlineSearchEnabled===false?' Enable online search to try YouTube.':'')}));
@@ -94,8 +77,7 @@
   var row=U.h('div.onlinerow',{role:'button',tabindex:'0',onclick:function(e){if(e.target.closest('button'))return;P.playback.playRemote(item);},onkeydown:function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();P.playback.playRemote(item);}}});
   var art=U.h('div.onlinerow__art');
   if(item.artworkUrl){var img=U.h('img',{alt:'',loading:'lazy'});img.src=item.artworkUrl;img.onerror=function(){img.remove();};art.appendChild(img);}else art.appendChild(U.icon('i-note','ico--sm'));
-  row.appendChild(art);
-  row.appendChild(U.h('div.grow',U.h('div.track__title',{text:item.title||'Unknown title'}),U.h('div.track__sub',{text:(item.artist||'YouTube')+(item.album?' · '+item.album:'')}),U.h('div.rowitem__sub',{text:'YouTube'+(item.durationMs?' · '+U.fmtTime(item.durationMs/1000):'')})));
+  row.appendChild(art);row.appendChild(U.h('div.grow',U.h('div.track__title',{text:item.title||'Unknown title'}),U.h('div.track__sub',{text:(item.artist||'YouTube')+(item.album?' · '+item.album:'')}),U.h('div.rowitem__sub',{text:'YouTube'+(item.durationMs?' · '+U.fmtTime(item.durationMs/1000):'')})));
   row.appendChild(U.h('button.iconbtn',{type:'button','aria-label':'Options',onclick:function(e){e.stopPropagation();P.sheet.trackOptions(item);}},U.icon('i-more','ico--sm')));
   return row;
  }
@@ -106,11 +88,10 @@
   P.toast.show('Playlist link saved on this device');renderPlaylist();
  }
  function renderPlaylist(){
-  if(!playlist||!results)return;U.clear(results);
-  var panel=U.h('section.playlist-panel');
+  if(!playlist||!results)return;U.clear(results);var panel=U.h('section.playlist-panel');
   panel.appendChild(U.h('div.playlist-panel__head',
-    U.h('div.grow',U.h('div.playlist-panel__eyebrow',{text:'YOUTUBE PLAYLIST'}),U.h('h2.playlist-panel__title',{text:playlist.title||'YouTube playlist'}),U.h('p.playlist-panel__meta',{text:errorText||(loading?items.length+' tracks loaded · loading more':items.length+' tracks')})),
-    U.h('button.iconbtn',{type:'button','aria-label':'Save playlist',onclick:savePlaylist},U.icon('i-plus','ico--sm'))));
+   U.h('div.grow',U.h('div.playlist-panel__eyebrow',{text:'YOUTUBE PLAYLIST'}),U.h('h2.playlist-panel__title',{text:playlist.title||'YouTube playlist'}),U.h('p.playlist-panel__meta',{text:errorText||(loading?items.length+' tracks loaded · loading more':items.length+' tracks')})),
+   U.h('button.iconbtn',{type:'button','aria-label':'Save playlist',onclick:savePlaylist},U.icon('i-plus','ico--sm'))));
   if(errorText)panel.appendChild(U.h('p.playlist-panel__error',{text:errorText}));
   panel.appendChild(U.h('div.playlist-panel__actions',
    U.h('button.actionbtn',{type:'button',disabled:!items.length,onclick:function(){startPlaylist(0,false);}},U.icon('i-play','ico--sm'),'Play playlist'),
@@ -122,7 +103,7 @@
    var row=U.h('div.onlinerow.playlistrow',{role:'button',tabindex:'0',onclick:function(){startPlaylist(i,false);},onkeydown:function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();startPlaylist(i,false);}}});
    var art=U.h('div.onlinerow__art');
    if(item.artworkUrl){var im=U.h('img',{alt:'',loading:'lazy'});im.src=item.artworkUrl;im.onerror=function(){im.remove();};art.appendChild(im);}else art.appendChild(U.icon('i-note','ico--sm'));
-   row.appendChild(art);row.appendChild(U.h('div.grow',U.h('div.track__title',{text:item.title||'Unknown title'}),U.h('div.track__sub',{text:item.artist||'YouTube'}),U.h('div.playlistrow__meta',{text:(i+1)+ (item.durationMs?' · '+U.fmtTime(item.durationMs/1000):'')})));
+   row.appendChild(art);row.appendChild(U.h('div.grow',U.h('div.track__title',{text:item.title||'Unknown title'}),U.h('div.track__sub',{text:item.artist||'YouTube'}),U.h('div.playlistrow__meta',{text:(i+1)+(item.durationMs?' · '+U.fmtTime(item.durationMs/1000):'')})));
    row.appendChild(U.h('button.iconbtn',{type:'button','aria-label':'Play from this track',onclick:function(e){e.stopPropagation();startPlaylist(i,false);}},U.icon('i-play','ico--sm')));
    rows.appendChild(row);
   });
@@ -139,7 +120,6 @@
  }
  function acceptPlaylist(payload){
   if(!playlist||!payload||(payload.url&&payload.url!==playlist.url))return;
-  var oldCount=items.length;
   items=Array.isArray(payload.items)?payload.items.slice(0,150):[];
   playlist.title=payload.title||playlist.title;loading=!payload.complete;complete=!!payload.complete;errorText='';
   if(queueActive){
@@ -152,14 +132,20 @@
   if(P.nav.current()==='search')renderPlaylist();
  }
  var SearchUI={
-  render:function(){build();P.nav.setAppbar('Search','',[]);if(playlist)renderPlaylist();else if(!lastQuery)renderSuggestions();else renderLocal(lastQuery);},
+  render:function(){build();if(P.nav.current()==='search')P.nav.setAppbar('Search','',[]);if(playlist)renderPlaylist();else if(!lastQuery)renderSuggestions();else renderLocal(lastQuery);},
   focus:function(){build();if(input)input.focus();},
   search:function(q){build();if(input)input.value=q||'';searchNow(q);}
  };
  P.searchUI=SearchUI;
  P.bus.on('page',function(name){if(name==='search')SearchUI.render();});
  P.bus.on('playlistResults',acceptPlaylist);
- P.bus.on('searchResults',function(){if(playlist)return;if(P.nav.current()==='search'&&lastQuery)renderLocal(lastQuery);});
+ P.bus.on('searchResults',function(payload){
+  if(playlist){
+   if(payload&&payload.state==='error'){loading=false;complete=true;queueActive=false;errorText=payload.error||'Could not load this playlist. Check the link and connection.';if(P.nav.current()==='search')renderPlaylist();}
+   return;
+  }
+  if(P.nav.current()==='search'&&lastQuery)renderLocal(lastQuery);
+ });
  P.bus.on('library',function(){if(P.nav.current()==='search'){if(playlist)renderPlaylist();else if(lastQuery)renderLocal(lastQuery);else renderSuggestions();}});
  P.bus.on('archive',function(){if(P.nav.current()==='search'&&lastQuery&&!playlist)renderLocal(lastQuery);});
  P.bus.on('settings',function(){if(P.nav.current()==='search'&&results&&!playlist){if(lastQuery)renderLocal(lastQuery);else renderSuggestions();}});
